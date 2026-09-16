@@ -1,0 +1,19 @@
+# Keycloak token requests (dev only — Direct Access Grants / password grant).
+# Works in IntelliJ's HTTP client. Realm setup: infra/keycloak/README.md.
+
+### Get a token for alice (customer) — decode access_token at https://jwt.io,
+### expect realm_access.roles to contain "customer".
+POST http://localhost:8081/realms/ticketly/protocol/openid-connect/token
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=password&client_id=ticketly-api&username=alice&password=password
+
+### Get a token for bob (organizer)
+POST http://localhost:8081/realms/ticketly/protocol/openid-connect/token
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=password&client_id=ticketly-api&username=bob&password=password
+
+### OIDC discovery document — issuer, JWKS URI, endpoints. The services'
+### resource-server config (F-06) points at this issuer.
+GET http://localhost:8081/realms/ticketly/.well-known/openid-configuration

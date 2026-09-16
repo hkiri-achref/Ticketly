@@ -1,0 +1,231 @@
+# Ticketly local platform — F-00
+#
+# Production analogy: each container here stands in for a piece of managed
+# infrastructure (RDS instances, MSK, a hosted IdP...). In dev we containerize
+# everything so `docker compose up -d` reproduces the whole platform.
+#
+# Conventions used throughout:
+# - Pinned image tags: a database major upgrade must never happen by accident
+#   (Postgres data directories are NOT compatible across major versions).
+# - One named volume per stateful container: data lives outside the container
+#   lifecycle (survives `down`, recreate, image upgrade). Deleting data is an
+#   explicit act: `docker compose down -v`.
+# - Healthchecks: "process running" != "service ready". These are the dev
+#   analogue of Kubernetes readiness probes.
+
+name: ticketly
+
+services:
+  # ---------------------------------------------------------------------------
+  # Databases — one container per service (database-per-service, §2/§7).
+  # Physical isolation: separate process, credentials, volume, failure domain.
+  # Services address them by container DNS name (e.g. catalog-db:5432) inside
+  # the Docker network; distinct host ports (5432-5435) exist only because the
+  # laptop is a single machine.
+  # ---------------------------------------------------------------------------
+  catalog-db:
+    image: postgres:17
+    container_name: ticketly-catalog-db
+    environment:
+      POSTGRES_DB: catalog_db
+      POSTGRES_USER: catalog
+      POSTGRES_PASSWORD: catalog   # dev-only; secrets hygiene is F-23
+    ports:
+      - "5432:5432"
+    volumes:
+      - catalog-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U catalog -d catalog_db"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  booking-db:
+    image: postgres:17
+    container_name: ticketly-booking-db
+    environment:
+      POSTGRES_DB: booking_db
+      POSTGRES_USER: booking
+      POSTGRES_PASSWORD: booking
+    ports:
+      - "5433:5432"
+    volumes:
+      - booking-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U booking -d booking_db"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  payment-db:
+    image: postgres:17
+    container_name: ticketly-payment-db
+    environment:
+      POSTGRES_DB: payment_db
+      POSTGRES_USER: payment
+      POSTGRES_PASSWORD: payment
+    ports:
+      - "5434:5432"
+    volumes:
+      - payment-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U payment -d payment_db"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  notification-db:
+    image: postgres:17
+    container_name: ticketly-notification-db
+    environment:
+      POSTGRES_DB: notification_db
+      POSTGRES_USER: notification
+      POSTGRES_PASSWORD: notification
+    ports:
+      - "5435:5432"
+    volumes:
+      - notification-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U notification -d notification_db"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # ---------------------------------------------------------------------------
+  # Kafka 4 — KRaft, single node acting as both broker and controller.
+  # Kafka 4 removed ZooKeeper entirely; the controller quorum (Raft) is built
+  # into Kafka itself. One node is fine for dev; prod would run 3+.
+  #
+  # Two data listeners:
+  # - EXTERNAL (advertised as localhost:9092): for services run on the host
+  #   with `./mvnw spring-boot:run` (Phases 0-4).
+  # - INTERNAL (advertised as kafka:29092): for containerized services later
+  #   (F-22) — inside the Docker network "localhost" would mean themselves.
+  # A Kafka client bootstraps, then reconnects to whatever address the broker
+  # ADVERTISES — that is why advertised listeners must match the client's
+  # network point of view.
+  # ---------------------------------------------------------------------------
+  kafka:
+    image: apache/kafka:4.0.0
+    container_name: ticketly-kafka
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_LISTENERS: EXTERNAL://:9092,INTERNAL://:29092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: EXTERNAL://localhost:9092,INTERNAL://kafka:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: EXTERNAL:PLAINTEXT,INTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      # Single node => every internal topic must work with replication factor 1.
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+    ports:
+      - "9092:9092"
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    healthcheck:
+      # Asks the broker for its API versions — succeeds only once the broker
+      # actually serves requests, not merely when the JVM process is up.
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 > /dev/null 2>&1"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 20s
+
+  # ---------------------------------------------------------------------------
+  # Kafbat UI — web UI for Kafka (topics, messages, partitions, consumer
+  # groups and lag). Kafka itself ships no UI; this is the standard dev
+  # add-on. It lives INSIDE the Docker network, so it connects via the
+  # INTERNAL listener (kafka:29092), not localhost:9092.
+  # ---------------------------------------------------------------------------
+  kafka-ui:
+    image: ghcr.io/kafbat/kafka-ui:latest
+    container_name: ticketly-kafka-ui
+    environment:
+      KAFKA_CLUSTERS_0_NAME: ticketly
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
+    ports:
+      - "8082:8080"
+    depends_on:
+      kafka:
+        condition: service_healthy
+
+  # ---------------------------------------------------------------------------
+  # Keycloak 26 — OIDC identity provider (realm `ticketly`, §9.1).
+  # start-dev = dev mode: embedded H2 storage (persisted via the volume),
+  # HTTP without TLS. Prod would use `start` with Postgres + TLS.
+  # --import-realm imports every *.json found in /opt/keycloak/data/import at
+  # startup and SKIPS realms that already exist (idempotent). The file appears
+  # there once we export the UI-configured realm (F-00 step 5).
+  # Host port 8081 to keep 8080 free for services.
+  # ---------------------------------------------------------------------------
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.3
+    container_name: ticketly-keycloak
+    command: start-dev --import-realm
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      # Health endpoints live on the separate management port 9000 (KC 25+).
+      KC_HEALTH_ENABLED: "true"
+    ports:
+      - "8081:8080"
+    volumes:
+      - keycloak-data:/opt/keycloak/data
+      - ./keycloak/import:/opt/keycloak/data/import:ro
+    healthcheck:
+      # Gotcha: the Keycloak image ships no curl/wget. Bash's /dev/tcp
+      # pseudo-device lets us TCP-probe the management port instead.
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/9000"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 30s
+
+  # ---------------------------------------------------------------------------
+  # Mailpit — catches all SMTP mail and shows it in a web UI. Stands in for a
+  # real email provider so notification-service (F-20) never emails anyone.
+  # The image ships its own HEALTHCHECK (readyz), so none is defined here.
+  # ---------------------------------------------------------------------------
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: ticketly-mailpit
+    ports:
+      - "8025:8025"   # web UI
+      - "1025:1025"   # SMTP
+
+  # ---------------------------------------------------------------------------
+  # grafana/otel-lgtm — all-in-one observability: Loki (logs), Grafana (UI),
+  # Tempo (traces), Mimir/Prometheus (metrics) + an OTLP collector.
+  # Unused until F-25, but part of the platform from day one so the endpoint
+  # is always there.
+  # ---------------------------------------------------------------------------
+  lgtm:
+    image: grafana/otel-lgtm:latest
+    container_name: ticketly-lgtm
+    ports:
+      - "3000:3000"   # Grafana UI
+      - "4317:4317"   # OTLP gRPC
+      - "4318:4318"   # OTLP HTTP
+    volumes:
+      - lgtm-data:/data
+    healthcheck:
+      # Ubuntu-based image: bash is present, curl is not guaranteed -> TCP probe.
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/3000"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+volumes:
+  catalog-db-data:
+  booking-db-data:
+  payment-db-data:
+  notification-db-data:
+  kafka-data:
+  keycloak-data:
+  lgtm-data:
