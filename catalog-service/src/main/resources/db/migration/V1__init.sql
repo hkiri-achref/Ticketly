@@ -1,0 +1,4 @@
+-- F-01: deliberately empty. The lesson: even with no schema of our own,
+-- Flyway creates and manages its `flyway_schema_history` table — migration
+-- history is infrastructure that exists before the first real table does.
+-- Never edit this file once applied; schema changes get V2, V3, ...

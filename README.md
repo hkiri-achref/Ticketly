@@ -32,6 +32,24 @@ Dev users and how to get a JWT: `infra/keycloak/README.md` and
 Data persists across `docker compose down` (named volumes). Full reset:
 `docker compose -f infra/docker-compose.yml down -v`.
 
+The four databases carry Compose profiles (`catalog`, `booking`, `payment`,
+`notification`); `infra/.env` activates all of them, so the command above is
+unchanged. Each Spring Boot service activates only its own profile through
+Docker Compose support — it can even start its database by itself.
+
+## Run a service
+
+```bash
+cd catalog-service && ./mvnw spring-boot:run   # starts catalog-db if needed
+```
+
+| Service | Port | Extras |
+|---|---|---|
+| catalog-service | 8080 | Swagger UI: http://localhost:8080/swagger-ui.html |
+
+Example requests per service: `http/*.http`. Tests: `./mvnw verify` inside the
+service directory (Docker must be running — Testcontainers).
+
 ## Repository layout
 
 Monorepo with independent builds — one Maven project per service, no root

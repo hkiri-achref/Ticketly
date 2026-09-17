@@ -1,0 +1,14 @@
+# catalog-service — F-01 skeleton
+# Run the service first: cd catalog-service && ./mvnw spring-boot:run
+
+### Ping — returns PingResponse(service, time)
+GET http://localhost:8080/api/v1/ping
+
+### Actuator health (liveness + readiness groups)
+GET http://localhost:8080/actuator/health
+
+### OpenAPI document (what Swagger UI renders)
+GET http://localhost:8080/v3/api-docs
+
+### Swagger UI (open in browser)
+# http://localhost:8080/swagger-ui.html

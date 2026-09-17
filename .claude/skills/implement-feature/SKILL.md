@@ -25,6 +25,17 @@ We are IMPLEMENTING feature $ARGUMENTS of Ticketly from its approved plan.
 6. Set the plan's `status: implemented`, then draft `docs/learning-notes/$ARGUMENTS.md`
    with: what was built, concepts practiced, two interview questions, and one production
    concern deliberately simplified.
+7. End with the **feature debrief** (always, in the chat, as the final message):
+   - **Business tour** — what the platform can do now that it could not do before,
+     in plain product language (no class names), and how this feature moves the
+     Ticketly story forward.
+   - **Pedagogic tour of the technical implementation** — walk through the design
+     decision by decision: what I chose, WHY I chose it, what the idiomatic best
+     practice is, and what the main alternative was and why it lost. Assume I am
+     relearning modern Java/Spring: name the concept, then explain it in plain words.
+   - **How to test it yourself** — exact commands and URLs to run, what output to
+     expect, plus which automated test covers what.
+   Keep it a readable narrative, not a checklist dump.
 
 Rules: no Lombok, constructor injection, records vs entities per CLAUDE.md.
 Never implement anything from later features.

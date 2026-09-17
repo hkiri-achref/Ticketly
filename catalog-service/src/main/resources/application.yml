@@ -1,0 +1,64 @@
+# Defaults for every profile. Profile-specific overrides live in the
+# `---` documents below (Spring reads one YAML file as multiple documents).
+spring:
+  application:
+    name: catalog-service
+
+  # Virtual threads (Java 21+): MVC keeps its simple thread-per-request model,
+  # but requests run on cheap virtual threads, so blocking JDBC calls no longer
+  # pin a scarce platform thread. This is why we can stay blocking everywhere.
+  threads:
+    virtual:
+      enabled: true
+
+  # OSIV keeps the JPA session open during view rendering; with an API-only
+  # service it only hides lazy-loading mistakes. Off from day one.
+  jpa:
+    open-in-view: false
+
+  # Docker Compose support: on `spring-boot:run` Boot starts the compose
+  # services itself and injects connection details from the running container.
+  # profiles.active=catalog → only OUR database, not the other three postgres
+  # containers in the shared file (they'd be ambiguous DataSource candidates).
+  docker:
+    compose:
+      file: ../infra/docker-compose.yml
+      profiles:
+        active: catalog
+      # Default (`if-running`) skips `up` when ANY project container is running —
+      # so a stopped catalog-db would never be started while kafka/keycloak are up.
+      # `never` = always run `up`; idempotent for what already runs.
+      start:
+        skip: never
+
+  # If nothing else is chosen, behave like `local` (laptop dev).
+  profiles:
+    default: local
+
+ticketly:
+  catalog:
+    name: catalog-service
+
+---
+# local = running on the laptop against infra/docker-compose.yml.
+# Explicit datasource props are the fallback when compose support is off
+# (e.g. app started while infra is already up via `docker compose up -d`);
+# when compose support IS active its connection details take precedence.
+spring:
+  config:
+    activate:
+      on-profile: local
+  datasource:
+    url: jdbc:postgresql://localhost:5432/catalog_db
+    username: catalog
+    password: catalog
+
+---
+# test = integration tests. Testcontainers owns the database: the
+# @ServiceConnection container publishes its own URL/credentials, so no
+# datasource properties here. Compose support is auto-disabled in tests
+# (spring.docker.compose.skip.in-tests defaults to true).
+spring:
+  config:
+    activate:
+      on-profile: test

@@ -22,9 +22,17 @@ services:
   # Services address them by container DNS name (e.g. catalog-db:5432) inside
   # the Docker network; distinct host ports (5432-5435) exist only because the
   # laptop is a single machine.
+  #
+  # Compose profiles (F-01): each DB carries a profile so a Spring Boot service
+  # using Docker Compose support can activate ONLY its own database
+  # (spring.docker.compose.profiles.active) — otherwise Boot would see four
+  # postgres containers and fail to pick a unique DataSource candidate.
+  # `.env` next to this file sets COMPOSE_PROFILES so a plain
+  # `docker compose -f infra/docker-compose.yml up -d` still starts everything.
   # ---------------------------------------------------------------------------
   catalog-db:
     image: postgres:17
+    profiles: ["catalog"]
     container_name: ticketly-catalog-db
     environment:
       POSTGRES_DB: catalog_db
@@ -42,6 +50,7 @@ services:
 
   booking-db:
     image: postgres:17
+    profiles: ["booking"]
     container_name: ticketly-booking-db
     environment:
       POSTGRES_DB: booking_db
@@ -59,6 +68,7 @@ services:
 
   payment-db:
     image: postgres:17
+    profiles: ["payment"]
     container_name: ticketly-payment-db
     environment:
       POSTGRES_DB: payment_db
@@ -76,6 +86,7 @@ services:
 
   notification-db:
     image: postgres:17
+    profiles: ["notification"]
     container_name: ticketly-notification-db
     environment:
       POSTGRES_DB: notification_db
