@@ -230,7 +230,7 @@ Add JaCoCo with the 90% check, rewrite existing tests to the naming/structure
 convention, and add the missing `VenueService` unit test to clear the bar.
 
 **Tasks**:
-- [ ] Add `jacoco-maven-plugin` to `catalog-service/pom.xml`, pinned to
+- [x] Add `jacoco-maven-plugin` to `catalog-service/pom.xml`, pinned to
       **≥ 0.8.14** (Java 25 class-file support; the Boot parent does not manage
       this plugin's version): `prepare-agent`
       (unit) + `report`, and a `check` execution bound to `verify` with rule
@@ -238,32 +238,32 @@ convention, and add the missing `VenueService` unit test to clear the bar.
       `**/CatalogServiceApplication.class` and `**/config/**`. (Integration
       tests currently run via Surefire/`@SpringBootTest`, so a single
       prepare-agent covers them; revisit if Failsafe is introduced.)
-- [ ] Rename every test method in `VenueControllerTest`,
+- [x] Rename every test method in `VenueControllerTest`,
       `VenueRepositoryTest`, and `CatalogServiceApplicationTests` to
       `given_<state>_when_<action>_then_<outcome>` (e.g.
       `given_validBody_when_postVenue_then_returns201WithLocation`) and
       restructure bodies into three sections separated by `// given`,
       `// when`, `// then` comments (for MockMvc chains, `when+then` may share
       the perform/expect chain — mark the sections anyway).
-- [ ] Add `@DisplayName` only where the method name alone is unreadable; keep
+- [x] Add `@DisplayName` only where the method name alone is unreadable; keep
       tests self-explanatory.
-- [ ] Create `catalog-service/src/test/java/com/ticketly/catalog/application/VenueServiceTest.java`:
+- [x] Create `catalog-service/src/test/java/com/ticketly/catalog/application/VenueServiceTest.java`:
       plain JUnit + Mockito (`@ExtendWith(MockitoExtension.class)`, no Spring
       context) covering create, getById found/not-found, and list paths, in the
       same given/when/then convention.
-- [ ] Run `./mvnw verify`; if coverage < 90%, inspect
+- [x] Run `./mvnw verify`; if coverage < 90%, inspect
       `target/site/jacoco/index.html` and add targeted tests (e.g.
       `ApiExceptionHandler` branches) until the gate passes.
 
 **Automated Verification**:
-- [ ] `cd catalog-service && ./mvnw verify` passes including the JaCoCo check.
-- [ ] Every `@Test` method matches the convention (sections use camelCase, so
+- [x] `cd catalog-service && ./mvnw verify` passes including the JaCoCo check.
+- [x] Every `@Test` method matches the convention (sections use camelCase, so
       `given_validBody_when_postVenue_then_returns201`):
       `grep -rhE "^\s*(public )?void [a-zA-Z]" catalog-service/src/test | grep -vE "void given_[a-zA-Z0-9]+_when_[a-zA-Z0-9]+_then_[a-zA-Z0-9]+"`
       prints nothing (all test-class methods are `@Test`/lifecycle methods; if
       a private helper trips this, it's `static` or returns non-void and won't
       match).
-- [ ] Every test file contains all three section markers:
+- [x] Every test file contains all three section markers:
       `for m in "// given" "// when" "// then"; do grep -rL --include="*Test*.java" "$m" catalog-service/src/test; done`
       prints nothing.
 
@@ -403,6 +403,13 @@ During implementation, document user feedback, problems, and decisions here.
 - Remaining build warning: PMD's "Adding current platform jrt-fs.jar ... could be the wrong
   java version" appears only because the local JDK (26) differs from `targetJdk` 25; it
   needs a Maven toolchains file to silence, and does not occur on CI (Temurin 25).
+- Phase 2: coverage landed at 96.9% instruction coverage (342/353). Added `PingControllerTest`
+  (F-01 endpoint had no test) besides the planned `VenueServiceTest`. Learned: slice tests
+  ignore `@ConfigurationPropertiesScan`, so the ping slice needs
+  `@EnableConfigurationProperties(CatalogProperties.class)`.
+- The section-marker grep in the plan uses `*Test*.java`, which also matches the two
+  support classes `TestcontainersConfiguration` and `TestCatalogServiceApplication`; with
+  `--include="*Test.java" --include="*Tests.java"` it prints nothing, as intended.
 
 ## References
 

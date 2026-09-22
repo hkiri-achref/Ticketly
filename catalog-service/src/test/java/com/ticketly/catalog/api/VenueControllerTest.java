@@ -35,12 +35,6 @@ import org.springframework.test.web.servlet.MockMvc;
 @Import(WebConfig.class)
 class VenueControllerTest {
 
-	@Autowired
-	private MockMvc mockMvc;
-
-	@MockitoBean
-	private VenueService service;
-
 	// Text block (Java 15+): multi-line JSON without escape noise. Google style
 	// puts the opening quotes on their own line and aligns both delimiters.
 	private static final String VALID_BODY =
@@ -52,20 +46,32 @@ class VenueControllerTest {
 			}
 			""";
 
+	@Autowired
+	private MockMvc mockMvc;
+
+	@MockitoBean
+	private VenueService service;
+
 	@Test
-	void createReturns201WithLocationAndBody() throws Exception {
+	void given_validBody_when_postVenue_then_returns201WithLocationAndBody() throws Exception {
+		// given
 		var venue = new Venue("Le Zénith", new Address("211 Avenue Jean Jaurès", "Paris", "France"), 6293);
 		given(service.create(any())).willReturn(venue);
 
-		mockMvc.perform(post("/api/v1/venues").contentType(MediaType.APPLICATION_JSON).content(VALID_BODY))
-				.andExpect(status().isCreated())
+		// when
+		var result = mockMvc.perform(
+				post("/api/v1/venues").contentType(MediaType.APPLICATION_JSON).content(VALID_BODY));
+
+		// then
+		result.andExpect(status().isCreated())
 				.andExpect(header().string("Location", "http://localhost/api/v1/venues/" + venue.getId()))
 				.andExpect(jsonPath("$.id").value(venue.getId().toString()))
 				.andExpect(jsonPath("$.address.city").value("Paris"));
 	}
 
 	@Test
-	void invalidBodyReturnsProblemDetailWithFieldErrors() throws Exception {
+	void given_invalidBody_when_postVenue_then_returns400ProblemDetailWithFieldErrors() throws Exception {
+		// given
 		String invalid =
 				"""
 				{
@@ -75,8 +81,12 @@ class VenueControllerTest {
 				}
 				""";
 
-		mockMvc.perform(post("/api/v1/venues").contentType(MediaType.APPLICATION_JSON).content(invalid))
-				.andExpect(status().isBadRequest())
+		// when
+		var result = mockMvc.perform(
+				post("/api/v1/venues").contentType(MediaType.APPLICATION_JSON).content(invalid));
+
+		// then
+		result.andExpect(status().isBadRequest())
 				.andExpect(header().string("Content-Type", MediaType.APPLICATION_PROBLEM_JSON_VALUE))
 				.andExpect(jsonPath("$.title").value("Validation failed"))
 				.andExpect(jsonPath("$.errors.length()").value(3))
@@ -86,24 +96,31 @@ class VenueControllerTest {
 	}
 
 	@Test
-	void unknownIdReturns404ProblemDetail() throws Exception {
+	void given_unknownId_when_getVenue_then_returns404ProblemDetail() throws Exception {
+		// given
 		var id = UUID.randomUUID();
 		given(service.getById(id)).willThrow(new EntityNotFoundException("Venue %s not found".formatted(id)));
 
-		mockMvc.perform(get("/api/v1/venues/{id}", id))
-				.andExpect(status().isNotFound())
+		// when
+		var result = mockMvc.perform(get("/api/v1/venues/{id}", id));
+
+		// then
+		result.andExpect(status().isNotFound())
 				.andExpect(header().string("Content-Type", MediaType.APPLICATION_PROBLEM_JSON_VALUE))
 				.andExpect(jsonPath("$.title").value("Resource not found"));
 	}
 
 	@Test
-	void listSerializesPageViaStablePagedModel() throws Exception {
+	void given_venueInCity_when_listByCity_then_returnsStablePagedModelShape() throws Exception {
+		// given
 		var venue = new Venue("Le Zénith", new Address("211 Avenue Jean Jaurès", "Paris", "France"), 6293);
 		given(service.list(eq("Paris"), any())).willReturn(new PageImpl<>(List.of(venue), PageRequest.of(0, 20), 1));
 
-		mockMvc.perform(get("/api/v1/venues").param("city", "Paris"))
-				.andExpect(status().isOk())
-				// VIA_DTO shape: content[] + page{} instead of PageImpl internals.
+		// when
+		var result = mockMvc.perform(get("/api/v1/venues").param("city", "Paris"));
+
+		// then: VIA_DTO shape — content[] + page{} instead of PageImpl internals.
+		result.andExpect(status().isOk())
 				.andExpect(jsonPath("$.content[0].name").value("Le Zénith"))
 				.andExpect(jsonPath("$.page.totalElements").value(1));
 	}

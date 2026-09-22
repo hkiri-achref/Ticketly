@@ -36,38 +36,41 @@ class VenueRepositoryTest {
 	private JdbcTemplate jdbcTemplate;
 
 	@Test
-	void addressRecordRoundTripsThroughThreeColumns() {
+	void given_savedVenue_when_reloadedFromDatabase_then_addressRoundTripsThroughThreeColumns() {
+		// given: an INSERT that really hit the database. flush + clear force the
+		// SQL and drop the first-level cache, so the reload below is a real read
+		// instead of the same in-memory instance.
 		var saved = repository.save(
 				new Venue("Le Zénith", new Address("211 Avenue Jean Jaurès", "Paris", "France"), 6293));
-
-		// flush + clear: force the INSERT and drop the first-level cache, so the
-		// reload below really hits the database instead of returning the same
-		// in-memory instance.
 		entityManager.flush();
 		entityManager.clear();
 
+		// when
 		var reloaded = repository.findById(saved.getId()).orElseThrow();
-		// Record equality compares all components — one assert proves the whole
-		// value object survived the round-trip.
-		assertThat(reloaded.getAddress()).isEqualTo(new Address("211 Avenue Jean Jaurès", "Paris", "France"));
-		assertThat(reloaded).isEqualTo(saved); // ID-based entity equality
-
-		// Prove the physical mapping: one embedded field → three real columns.
 		Map<String, Object> row = jdbcTemplate.queryForMap(
 				"select street, city, country from venues where id = ?", saved.getId());
+
+		// then: record equality compares all components — one assert proves the
+		// whole value object survived; the raw row proves one embedded field
+		// really became three physical columns.
+		assertThat(reloaded.getAddress()).isEqualTo(new Address("211 Avenue Jean Jaurès", "Paris", "France"));
+		assertThat(reloaded).isEqualTo(saved); // ID-based entity equality
 		assertThat(row).containsEntry("street", "211 Avenue Jean Jaurès")
 				.containsEntry("city", "Paris")
 				.containsEntry("country", "France");
 	}
 
 	@Test
-	void findsByCityIgnoringCase() {
+	void given_venuesInTwoCities_when_findByCityIgnoringCase_then_returnsOnlyThatCity() {
+		// given
 		repository.save(new Venue("Le Zénith", new Address("211 Avenue Jean Jaurès", "Paris", "France"), 6293));
 		repository.save(new Venue("O2 Arena", new Address("Peninsula Square", "London", "UK"), 20000));
 		entityManager.flush();
 
+		// when
 		Page<Venue> page = repository.findByAddressCityIgnoreCase("pArIs", PageRequest.of(0, 10));
 
+		// then
 		assertThat(page.getTotalElements()).isEqualTo(1);
 		assertThat(page.getContent().getFirst().getName()).isEqualTo("Le Zénith");
 	}
