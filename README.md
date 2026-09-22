@@ -48,7 +48,9 @@ cd catalog-service && ./mvnw spring-boot:run   # starts catalog-db if needed
 | catalog-service | 8080 | Swagger UI: http://localhost:8080/swagger-ui.html |
 
 Example requests per service: `http/*.http`. Tests: `./mvnw verify` inside the
-service directory (Docker must be running — Testcontainers).
+service directory (Docker must be running — Testcontainers). On GitHub the
+same gates run as separate CI jobs; how to read a red run and download its
+reports: `docs/learning-notes/ci-checks.md`.
 
 ## Repository layout
 

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<report name="catalog-service">
+    <package name="com/ticketly/catalog/api">
+        <counter type="INSTRUCTION" missed="1" covered="99"/>
+    </package>
+    <counter type="INSTRUCTION" missed="11" covered="342"/>
+    <counter type="LINE" missed="2" covered="80"/>
+</report>

@@ -1,0 +1,7 @@
+<project><build><plugins><plugin><artifactId>jacoco-maven-plugin</artifactId>
+<executions>
+  <execution><id>report</id></execution>
+  <execution><id>check</id><configuration><rules><rule><element>BUNDLE</element><limits>
+    <limit><counter>INSTRUCTION</counter><value>COVEREDRATIO</value><minimum>0.90</minimum></limit>
+  </limits></rule></rules></configuration></execution>
+</executions></plugin></plugins></build></project>

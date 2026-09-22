@@ -1,49 +1,364 @@
-# CI for catalog-service. Runs the exact same `./mvnw verify` as a developer
-# (Checkstyle, PMD, tests on Testcontainers, JaCoCo >= 90%), so CI and local
-# never drift.
+# CI for catalog-service.
 #
-# Deliberately NO workflow-level `paths:` filter: the `verify` job is a required
-# status check on `main`, and a required check that never triggers would block
-# docs-only or other-service PRs forever. Instead the job always runs, detects
-# changes itself, and exits green early when this service is untouched.
+# Locally, `./mvnw verify` is still THE build: Checkstyle -> compile -> tests
+# (Testcontainers) -> package -> PMD + JaCoCo report + JaCoCo >= 90% check.
+# CI runs the same plugins, versions, rules and thresholds (all read from
+# catalog-service/pom.xml), but as INDEPENDENT jobs so a style slip cannot hide
+# the test result and each failure gets its own log, artifact and summary.
+# The command map and the rationale are in docs/learning-notes/ci-checks.md.
+#
+# Deliberately NO workflow-level `paths:` filter: the final `verify` job is the
+# required status check on `main`. A required check that never triggers would
+# block docs-only or other-service PRs forever. Instead the `changes` job always
+# runs, and `verify` reports success with a reason when this service is untouched.
 name: catalog-service CI
 
 on:
   pull_request:
   push:
     branches: [main]
+  # Deliberate full rerun from the Actions tab; bypasses change detection.
+  workflow_dispatch:
+
+# Least privilege by default; jobs that need more declare it themselves.
+permissions:
+  contents: read
 
 # One run per branch: a new push cancels the previous, still-running one.
+# A cancelled run is reported as cancelled (never success); the newer run
+# supplies the current result.
 concurrency:
   group: catalog-ci-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  # Every Maven invocation below is `./mvnw $MVN <goals>` from catalog-service.
+  MVN: --batch-mode --no-transfer-progress
+  SERVICE: catalog-service
+
 jobs:
-  verify:
+  # ---------------------------------------------------------------------------
+  # 1. Did this change touch anything the checks depend on?
+  # ---------------------------------------------------------------------------
+  changes:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read   # paths-filter lists the PR's changed files via the API
+    outputs:
+      # "true" | "false". `verify` treats anything else as a detection error.
+      service: ${{ steps.dispatch.outputs.service || steps.filter.outputs.service }}
     steps:
       - uses: actions/checkout@v5
 
-      - uses: dorny/paths-filter@v3
-        id: changes
+      - id: dispatch
+        if: github.event_name == 'workflow_dispatch'
+        run: echo "service=true" >> "$GITHUB_OUTPUT"
+
+      - id: filter
+        if: github.event_name != 'workflow_dispatch'
+        uses: dorny/paths-filter@v4
         with:
           filters: |
             service:
               - 'catalog-service/**'
               - 'config/**'
+              - 'scripts/ci/**'
               - '.github/workflows/catalog-service-ci.yml'
 
-      - if: steps.changes.outputs.service == 'true'
-        uses: actions/setup-java@v5
+  # ---------------------------------------------------------------------------
+  # 2. Independent checks. Each: own job, own log, own artifact, own summary.
+  #    They depend only on change detection, so a red Checkstyle never stops
+  #    the tests or PMD from running.
+  # ---------------------------------------------------------------------------
+  checkstyle:
+    needs: changes
+    if: needs.changes.outputs.service == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      status: ${{ steps.report.outputs.status }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "25"
           cache: maven
+          cache-dependency-path: catalog-service/pom.xml
 
-      # Docker is preinstalled on ubuntu-latest, so Testcontainers just works.
-      - if: steps.changes.outputs.service == 'true'
-        run: ./mvnw --batch-mode --no-transfer-progress verify
+      # Only the style gate; nothing is compiled.
+      - id: gate
+        run: ./mvnw $MVN checkstyle:check
         working-directory: catalog-service
 
-      - if: steps.changes.outputs.service != 'true'
-        run: echo "catalog-service untouched — skipping verify (check reports success)."
+      # `!cancelled()` = run after a failure too, so the summary explains it.
+      # The gate step above already failed the job; this step only reports.
+      - id: report
+        if: ${{ !cancelled() }}
+        run: >
+          python3 scripts/ci/report.py checkstyle
+          --xml $SERVICE/target/checkstyle-result.xml
+          --gate-outcome ${{ steps.gate.outcome }}
+
+      - if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: checkstyle-report-${{ github.run_attempt }}
+          path: catalog-service/target/checkstyle-result.xml
+          if-no-files-found: warn
+          retention-days: 14
+
+  tests:
+    needs: changes
+    if: needs.changes.outputs.service == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    outputs:
+      tests: ${{ steps.report.outputs.status }}
+      coverage: ${{ steps.coverage-report.outputs.status }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: maven
+          cache-dependency-path: catalog-service/pom.xml
+
+      # Testcontainers needs a Docker daemon; ubuntu-latest ships one.
+      - name: Toolchain
+        run: |
+          java -version
+          ./mvnw --version
+          docker info --format 'Docker {{.ServerVersion}} on {{.OperatingSystem}}'
+        working-directory: catalog-service
+
+      # Compile, run ALL current tests with the JaCoCo agent recording to
+      # target/jacoco.exec, and build the Boot executable JAR. Stops at
+      # `package`, so the verify-bound PMD and JaCoCo executions do not run.
+      # Checkstyle is skipped here only because the `checkstyle` job owns it.
+      - id: gate
+        run: ./mvnw $MVN -Dcheckstyle.skip=true package
+        working-directory: catalog-service
+
+      - id: report
+        if: ${{ !cancelled() }}
+        run: >
+          python3 scripts/ci/report.py tests
+          --reports-dir $SERVICE/target/surefire-reports
+          --gate-outcome ${{ steps.gate.outcome }}
+
+      # No `clean` between these steps: it would erase jacoco.exec.
+      # The report is also rendered after a test failure (partial data is
+      # still useful to look at) but only when execution data exists.
+      - id: coverage-html
+        if: ${{ !cancelled() && hashFiles('catalog-service/target/jacoco.exec') != '' }}
+        run: ./mvnw $MVN jacoco:report@report
+        working-directory: catalog-service
+
+      # `jacoco:check@check` silently SUCCEEDS when jacoco.exec is missing
+      # ("Skipping JaCoCo execution due to missing execution data file"), so the
+      # file is asserted first: missing data is a failure, not a free pass.
+      # `@check` selects the pom execution that carries the 90% rule.
+      - id: coverage-gate
+        if: ${{ !cancelled() && steps.gate.outcome == 'success' }}
+        run: |
+          test -s target/jacoco.exec || { echo "::error::target/jacoco.exec missing or empty"; exit 1; }
+          ./mvnw $MVN jacoco:check@check
+        working-directory: catalog-service
+
+      - id: coverage-report
+        if: ${{ !cancelled() }}
+        run: >
+          python3 scripts/ci/report.py coverage
+          --xml $SERVICE/target/site/jacoco/jacoco.xml
+          --exec $SERVICE/target/jacoco.exec
+          --pom $SERVICE/pom.xml
+          --tests-outcome ${{ steps.gate.outcome }}
+          --gate-outcome ${{ steps.coverage-gate.outcome }}
+
+      - if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports-${{ github.run_attempt }}
+          path: catalog-service/target/surefire-reports/
+          if-no-files-found: warn
+          retention-days: 14
+
+      - if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report-${{ github.run_attempt }}
+          path: catalog-service/target/site/jacoco/
+          if-no-files-found: warn
+          retention-days: 14
+
+  pmd:
+    needs: changes
+    if: needs.changes.outputs.service == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      status: ${{ steps.report.outputs.status }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: maven
+          cache-dependency-path: catalog-service/pom.xml
+
+      # PMD's type resolution wants compiled classes, hence `compile` first.
+      # Checkstyle is skipped here only because the `checkstyle` job owns it.
+      - id: gate
+        run: ./mvnw $MVN -Dcheckstyle.skip=true compile pmd:check
+        working-directory: catalog-service
+
+      - id: report
+        if: ${{ !cancelled() }}
+        run: >
+          python3 scripts/ci/report.py pmd
+          --xml $SERVICE/target/pmd.xml
+          --gate-outcome ${{ steps.gate.outcome }}
+
+      - if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: pmd-report-${{ github.run_attempt }}
+          path: catalog-service/target/pmd.xml
+          if-no-files-found: warn
+          retention-days: 14
+
+  # ---------------------------------------------------------------------------
+  # 3. Static security analysis (CodeQL, default query suite). PMD stays the
+  #    clean-code check; this one looks for injection, SSRF, path traversal...
+  #    It compiles on its own (CodeQL traces the compiler) and never reruns tests.
+  #    Blocking policy: any finding with SARIF security-severity >= 7.0
+  #    (high/critical) fails the job, evaluated by scripts/ci/report.py, so a
+  #    "successful" scan with findings is still red.
+  # ---------------------------------------------------------------------------
+  security:
+    needs: changes
+    if: needs.changes.outputs.service == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      # Needed to upload SARIF to the Security tab. On a fork PR GITHUB_TOKEN is
+      # read-only regardless, so the upload step is skipped there and the SARIF
+      # artifact + the gate below remain the source of truth.
+      security-events: write
+    outputs:
+      status: ${{ steps.report.outputs.status }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: maven
+          cache-dependency-path: catalog-service/pom.xml
+
+      # Pinned to the commit of release v4.38.1 (bundles CodeQL CLI 2.27.0,
+      # which supports Java 7-26). Bump the SHA and the comment together.
+      - uses: github/codeql-action/init@1c5b675653bb5c22dbe9b12b556ec555138e09fd # v4.38.1
+        with:
+          languages: java-kotlin
+          build-mode: manual
+          source-root: catalog-service
+
+      # Manual build mode: CodeQL observes this javac run. Style is the
+      # `checkstyle` job's business; tests are the `tests` job's business.
+      - id: build
+        run: ./mvnw $MVN -Dcheckstyle.skip=true compile
+        working-directory: catalog-service
+
+      # `upload: never` + explicit upload step below, so an upload problem
+      # (e.g. default code-scanning setup enabled on the repo, or a fork PR)
+      # can never mask the analysis result. SARIF lands in target/codeql/.
+      - id: analyze
+        uses: github/codeql-action/analyze@1c5b675653bb5c22dbe9b12b556ec555138e09fd # v4.38.1
+        with:
+          category: /language:java-kotlin
+          upload: never
+          output: catalog-service/target/codeql
+
+      - id: upload
+        if: >-
+          ${{ !cancelled()
+              && hashFiles('catalog-service/target/codeql/*.sarif') != ''
+              && (github.event_name != 'pull_request'
+                  || github.event.pull_request.head.repo.full_name == github.repository) }}
+        # Upload is best-effort by design: it is NOT the gate. Its outcome is
+        # printed in the summary by the report step.
+        continue-on-error: true
+        uses: github/codeql-action/upload-sarif@1c5b675653bb5c22dbe9b12b556ec555138e09fd # v4.38.1
+        with:
+          sarif_file: catalog-service/target/codeql
+          category: /language:java-kotlin
+
+      - id: report
+        if: ${{ !cancelled() }}
+        run: >
+          python3 scripts/ci/report.py sarif
+          --sarif-dir $SERVICE/target/codeql
+          --category /language:java-kotlin
+          --min-severity 7.0
+          --analyze-outcome ${{ steps.analyze.outcome }}
+          --upload-outcome ${{ steps.upload.outcome }}
+
+      - if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-sarif-${{ github.run_attempt }}
+          path: catalog-service/target/codeql/
+          if-no-files-found: warn
+          retention-days: 14
+
+  # ---------------------------------------------------------------------------
+  # 4. The single required status check on `main`. `if: always()` so it can
+  #    judge failures, cancellations and skips instead of being skipped itself.
+  #    Decision table (scripts/ci/report.py `final`):
+  #      changes failed/cancelled/invalid output  -> FAIL
+  #      no relevant change, checks skipped       -> PASS (with reason)
+  #      relevant change, every check success     -> PASS
+  #      relevant change, any failure/cancel/skip -> FAIL
+  # ---------------------------------------------------------------------------
+  verify:
+    needs: [changes, checkstyle, tests, pmd, security]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+      # Job results and status lines are passed through env, never interpolated
+      # into the shell line: a test message containing a quote must not be able
+      # to break (or inject into) this step.
+      - env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          RELEVANT: ${{ needs.changes.outputs.service }}
+          R_CHECKSTYLE: ${{ needs.checkstyle.result }}
+          R_TESTS: ${{ needs.tests.result }}
+          R_PMD: ${{ needs.pmd.result }}
+          R_SECURITY: ${{ needs.security.result }}
+          S_CHECKSTYLE: ${{ needs.checkstyle.outputs.status }}
+          S_TESTS: ${{ needs.tests.outputs.tests }}
+          S_COVERAGE: ${{ needs.tests.outputs.coverage }}
+          S_PMD: ${{ needs.pmd.outputs.status }}
+          S_SECURITY: ${{ needs.security.outputs.status }}
+        run: >
+          python3 scripts/ci/report.py final
+          --changes-result "$CHANGES_RESULT"
+          --relevant "$RELEVANT"
+          --job "checkstyle=$R_CHECKSTYLE"
+          --job "tests=$R_TESTS"
+          --job "pmd=$R_PMD"
+          --job "security=$R_SECURITY"
+          --line "Checkstyle=$S_CHECKSTYLE"
+          --line "Tests=$S_TESTS"
+          --line "Coverage=$S_COVERAGE"
+          --line "PMD=$S_PMD"
+          --line "Security=$S_SECURITY"
