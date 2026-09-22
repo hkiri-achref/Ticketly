@@ -272,7 +272,7 @@ convention, and add the missing `VenueService` unit test to clear the bar.
 Dependencies: Phase 2 (CI runs the full gated build; it must be green).
 
 **Tasks**:
-- [ ] Create `.github/workflows/catalog-service-ci.yml`. IMPORTANT: no
+- [x] Create `.github/workflows/catalog-service-ci.yml`. IMPORTANT: no
       workflow-level `paths:` filter on `pull_request` — a required check that
       never triggers blocks unrelated PRs forever. Instead the job always runs,
       detects changes itself, and exits early with success when the service is
@@ -309,10 +309,10 @@ Dependencies: Phase 2 (CI runs the full gated build; it must be green).
       (Temurin 25 is available in setup-java; Docker is preinstalled on
       ubuntu-latest so Testcontainers works. Skipped steps still leave the
       `verify` job green, satisfying the required check on docs-only PRs.)
-- [ ] Push the branch, open a test PR touching `catalog-service/`, and confirm
+- [-] Push the branch, open a test PR touching `catalog-service/`, and confirm
       the `verify` job runs and passes; also confirm a docs-only commit lets
       the job succeed via the early skip.
-- [ ] Protect `main` with the full payload the PUT endpoint requires (all four
+- [-] Protect `main` with the full payload the PUT endpoint requires (all four
       top-level keys must be present or it returns 422), `enforce_admins: true`
       so the solo admin cannot merge past red checks:
       ```bash
@@ -328,7 +328,7 @@ Dependencies: Phase 2 (CI runs the full gated build; it must be green).
       ```
       Use the exact check context name as reported on the test PR; record the
       command in the ADR from the next task.
-- [ ] Write `docs/adr/ADR-XXX-quality-gates.md` (next free number): decisions
+- [x] Write `docs/adr/ADR-XXX-quality-gates.md` (next free number): decisions
       (Checkstyle/PMD/JaCoCo/CI) and the **new-service recipe**: copy the three
       plugin blocks into the new pom (adjust `../config` path), copy
       `catalog-service-ci.yml` → `<service>-ci.yml` renaming the job, the
@@ -349,7 +349,7 @@ Dependencies: Phase 2 (CI runs the full gated build; it must be green).
 Dependencies: Phases 1–3 (the skill references gates and CI that must exist).
 
 **Tasks**:
-- [ ] Update `.claude/skills/implement-feature/SKILL.md`:
+- [x] Update `.claude/skills/implement-feature/SKILL.md`:
       - New **Preconditions step 3**: derive the branch name from the plan
         filename — `feat/F-XX-<slug>` (or `fix/F-XX-<slug>` for bug-fix plans);
         if not already on it, `git switch -c` it from up-to-date `main`; never
@@ -365,19 +365,19 @@ Dependencies: Phases 1–3 (the skill references gates and CI that must exist).
         touched service (Checkstyle, PMD, tests, coverage ≥ 90%) before the
         plan is marked `implemented`; end by pushing the branch and offering to
         open a PR (merge happens via PR, gated by CI).
-- [ ] Update `CLAUDE.md`:
+- [x] Update `CLAUDE.md`:
       - Conventions: add the test naming/structure rule, branch naming, and
         Conventional Commits.
       - Definition of done: add "quality gates pass (`./mvnw verify`:
         Checkstyle, PMD, coverage ≥ 90%)" and "work merged via PR from a
         `feat/F-XX-*` branch with green CI".
-- [ ] Update `.claude/skills/plan-feature/SKILL.md` only if it names test
+- [x] Update `.claude/skills/plan-feature/SKILL.md` only if it names test
       conventions (quick check; expected: no change needed).
 
 **Automated Verification**:
-- [ ] `grep -q "feat/F" .claude/skills/implement-feature/SKILL.md` and
+- [x] `grep -q "feat/F" .claude/skills/implement-feature/SKILL.md` and
       `grep -q "given_" .claude/skills/implement-feature/SKILL.md` succeed.
-- [ ] `grep -q "coverage" CLAUDE.md` succeeds.
+- [x] `grep -q "coverage" CLAUDE.md` succeeds.
 
 **Manual Verification**:
 - [ ] Dry-read `/implement-feature` output on the next feature: it creates the
@@ -410,6 +410,12 @@ During implementation, document user feedback, problems, and decisions here.
 - The section-marker grep in the plan uses `*Test*.java`, which also matches the two
   support classes `TestcontainersConfiguration` and `TestCatalogServiceApplication`; with
   `--include="*Test.java" --include="*Tests.java"` it prints nothing, as intended.
+- Phase 3: branch pushed with git (credential helper). `gh` is only logged into the BMW
+  GitHub Enterprise host, not github.com, so opening the PR and applying branch protection
+  wait for `gh auth login -h github.com`. ADR written as `docs/adr/0002-quality-gates.md`
+  (numbering follows `0001-microservices.md`, not `ADR-XXX`).
+- Phase 4 done ahead of the PR steps (independent of them). `plan-feature/SKILL.md` names no
+  test convention, so it is unchanged.
 
 ## References
 
