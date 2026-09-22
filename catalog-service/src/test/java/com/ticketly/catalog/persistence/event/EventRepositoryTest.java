@@ -14,7 +14,14 @@ import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.HashSet;
+import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import org.hibernate.LazyInitializationException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -22,12 +29,13 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
-// JPA slice against real Postgres 17 (Flyway V1..V3 applied), so the tests
+// JPA slice against real Postgres 17 (Flyway V1..V4 applied), so the tests
 // prove the MIGRATION matches the mapping: Money's @AttributeOverride columns,
 // the FK, the enum-as-text column. Each test runs in a rolled-back
 // transaction unless it says otherwise (see the NOT_SUPPORTED tests).
@@ -168,6 +176,91 @@ class EventRepositoryTest {
 		// same id is "contained" too — equality is identity of the row.
 		assertThat(set).contains(event).contains(reloaded);
 		assertThat(reloaded).isNotSameAs(event).isEqualTo(event);
+	}
+
+	@Test
+	void given_savedEvent_when_publishedAndFlushed_then_versionIncremented() {
+		// given: a fresh row starts at version 0. The tier is added BEFORE the
+		// first flush on purpose — every flushed change to the row (addTier
+		// bumps updated_at) increments the version, not only publish().
+		var event = newDraftEvent(100);
+		event.addTier("Standard", PRICE, 60, 8);
+		var managed = repository.save(event);
+		entityManager.flush();
+		var versionBefore = managed.getVersion();
+
+		// when: dirty checking issues `update ... set version = 1 where version = 0`
+		managed.publish();
+		entityManager.flush();
+		var versionInDb = jdbcTemplate.queryForObject("select version from events where id = ?", Long.class,
+				managed.getId());
+
+		// then
+		assertThat(versionBefore).isZero();
+		assertThat(managed.getVersion()).isEqualTo(1L);
+		assertThat(versionInDb).isEqualTo(1L);
+	}
+
+	// The lost-update demo. Two threads each open their OWN transaction, load
+	// the same row (both see version 0), then WAIT on a latch so neither can
+	// commit before the other has loaded. Both publish and commit: the first
+	// UPDATE ... WHERE version = 0 succeeds and sets version 1; the second
+	// matches zero rows, Hibernate raises StaleObjectStateException and
+	// JpaTransactionManager translates it at commit into Spring's
+	// ObjectOptimisticLockingFailureException. The latch is what makes the
+	// race deterministic — racing two HTTP calls would be a flaky test.
+	@Test
+	@Transactional(propagation = Propagation.NOT_SUPPORTED)
+	void given_twoThreadsLoadSameEvent_when_bothPublish_then_oneFailsWithOptimisticLock() throws Exception {
+		// given
+		var eventId = commitEventWithOneTier();
+		var bothLoaded = new CountDownLatch(2);
+		var template = new TransactionTemplate(transactionManager);
+		Callable<Void> publishInOwnTransaction = () -> {
+			template.executeWithoutResult(status -> {
+				var event = repository.findWithTiersById(eventId).orElseThrow();
+				bothLoaded.countDown();
+				awaitQuietly(bothLoaded);
+				event.publish();
+			});
+			return null;
+		};
+
+		// when: a virtual thread per task (Java 21). ExecutorService is
+		// AutoCloseable since 19: close() waits for both tasks to finish.
+		List<Future<Void>> outcomes;
+		try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+			outcomes = executor.invokeAll(List.of(publishInOwnTransaction, publishInOwnTransaction));
+		}
+
+		// then: exactly one loser, and the row shows exactly one commit
+		var failures = outcomes.stream().map(EventRepositoryTest::failureOf).filter(t -> t != null).toList();
+		assertThat(failures).hasSize(1);
+		assertThat(failures.getFirst()).isInstanceOf(ObjectOptimisticLockingFailureException.class);
+		var row = jdbcTemplate.queryForMap("select status, version from events where id = ?", eventId);
+		assertThat(row).containsEntry("status", "PUBLISHED").containsEntry("version", 1L);
+	}
+
+	private static Throwable failureOf(Future<Void> outcome) {
+		try {
+			outcome.get(10, TimeUnit.SECONDS);
+			return null;
+		} catch (ExecutionException e) {
+			return e.getCause();
+		} catch (Exception e) {
+			throw new AssertionError("Task did not complete", e);
+		}
+	}
+
+	private static void awaitQuietly(CountDownLatch latch) {
+		try {
+			if (!latch.await(10, TimeUnit.SECONDS)) {
+				throw new AssertionError("Other thread never loaded the event");
+			}
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new AssertionError("Interrupted while waiting for the other thread", e);
+		}
 	}
 
 	private UUID commitEventWithOneTier() {
