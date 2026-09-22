@@ -14,12 +14,17 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.ticketly.catalog.application.event.AddTierCommand;
+import com.ticketly.catalog.application.event.CancelEventCommand;
 import com.ticketly.catalog.application.event.CreateEventCommand;
 import com.ticketly.catalog.application.event.EventService;
 import com.ticketly.catalog.domain.common.Money;
 import com.ticketly.catalog.domain.event.CapacityExceededException;
 import com.ticketly.catalog.domain.event.Event;
+import com.ticketly.catalog.domain.event.EventStatus;
 import com.ticketly.catalog.domain.event.InvalidEventPeriodException;
+import com.ticketly.catalog.domain.event.RejectionReason;
+import com.ticketly.catalog.domain.event.TransitionResult.Ok;
+import com.ticketly.catalog.domain.event.TransitionResult.Rejected;
 import com.ticketly.catalog.domain.venue.Address;
 import com.ticketly.catalog.domain.venue.Venue;
 import jakarta.persistence.EntityNotFoundException;
@@ -28,10 +33,13 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.http.MediaType;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -269,6 +277,151 @@ class EventControllerTest {
 		// then
 		result.andExpect(status().isNotFound())
 				.andExpect(jsonPath("$.title").value("Resource not found"));
+	}
+
+	// ---- F-04: publish / cancel ------------------------------------------
+
+	@Test
+	void given_serviceReturnsOk_when_postPublish_then_returns200WithPublishedEvent() throws Exception {
+		// given
+		var event = draftEvent();
+		event.addTier("Standard", PRICE, 60, 8);
+		event.publish();
+		given(service.publish(event.getId())).willReturn(new Ok(event));
+
+		// when
+		var result = mockMvc.perform(post("/api/v1/events/{id}/publish", event.getId()));
+
+		// then
+		result.andExpect(status().isOk())
+				.andExpect(header().string("Content-Type", MediaType.APPLICATION_JSON_VALUE))
+				.andExpect(jsonPath("$.status").value("PUBLISHED"))
+				.andExpect(jsonPath("$.version").value(0))
+				.andExpect(jsonPath("$.cancellationReason").doesNotExist());
+	}
+
+	// One test per RejectionReason: the mapping to 409 vs 422 is the whole
+	// point of the controller's switch, so every enum constant is pinned.
+	@ParameterizedTest(name = "{0} -> {1}")
+	@CsvSource({
+		"NO_TIERS, 422, DRAFT",
+		"STARTS_IN_PAST, 422, DRAFT",
+		"ALREADY_PUBLISHED, 409, PUBLISHED",
+		"ALREADY_CANCELLED, 409, CANCELLED"
+	})
+	void given_serviceReturnsRejected_when_postPublish_then_returnsMappedStatusProblemDetail(
+			RejectionReason reason, int expectedStatus, EventStatus currentStatus) throws Exception {
+		// given
+		var id = UUID.randomUUID();
+		given(service.publish(id)).willReturn(new Rejected(reason, currentStatus));
+
+		// when
+		var result = mockMvc.perform(post("/api/v1/events/{id}/publish", id));
+
+		// then
+		result.andExpect(status().is(expectedStatus))
+				.andExpect(header().string("Content-Type", MediaType.APPLICATION_PROBLEM_JSON_VALUE))
+				.andExpect(jsonPath("$.status").value(expectedStatus))
+				.andExpect(jsonPath("$.title").value("Transition rejected"))
+				.andExpect(jsonPath("$.detail").value(reason.message()))
+				.andExpect(jsonPath("$.reason").value(reason.name()))
+				.andExpect(jsonPath("$.currentStatus").value(currentStatus.name()));
+	}
+
+	@Test
+	void given_unknownId_when_postPublish_then_returns404ProblemDetail() throws Exception {
+		// given
+		var id = UUID.randomUUID();
+		given(service.publish(id)).willThrow(new EntityNotFoundException("Event %s not found".formatted(id)));
+
+		// when
+		var result = mockMvc.perform(post("/api/v1/events/{id}/publish", id));
+
+		// then
+		result.andExpect(status().isNotFound()).andExpect(jsonPath("$.title").value("Resource not found"));
+	}
+
+	@Test
+	void given_staleVersion_when_postPublish_then_returns409ProblemDetail() throws Exception {
+		// given: what JpaTransactionManager throws out of commit when the
+		// @Version check fails — the service never catches it
+		var id = UUID.randomUUID();
+		given(service.publish(id)).willThrow(new ObjectOptimisticLockingFailureException(Event.class, id));
+
+		// when
+		var result = mockMvc.perform(post("/api/v1/events/{id}/publish", id));
+
+		// then
+		result.andExpect(status().isConflict())
+				.andExpect(header().string("Content-Type", MediaType.APPLICATION_PROBLEM_JSON_VALUE))
+				.andExpect(jsonPath("$.title").value("Concurrent modification"))
+				.andExpect(jsonPath("$.detail").value(containsString("Reload it and retry")));
+	}
+
+	@Test
+	void given_validReason_when_postCancel_then_returns200WithCancellationData() throws Exception {
+		// given
+		var event = draftEvent();
+		event.cancel("Venue flooded");
+		given(service.cancel(eq(event.getId()), any())).willReturn(new Ok(event));
+		String body =
+				"""
+				{"reason": "  Venue flooded  "}
+				""";
+
+		// when
+		var result = mockMvc.perform(post("/api/v1/events/{id}/cancel", event.getId())
+				.contentType(MediaType.APPLICATION_JSON).content(body));
+
+		// then: the request record stripped the reason before it reached the command
+		result.andExpect(status().isOk())
+				.andExpect(jsonPath("$.status").value("CANCELLED"))
+				.andExpect(jsonPath("$.cancellationReason").value("Venue flooded"))
+				.andExpect(jsonPath("$.cancelledAt").exists());
+		var captor = ArgumentCaptor.forClass(CancelEventCommand.class);
+		then(service).should().cancel(eq(event.getId()), captor.capture());
+		assertThat(captor.getValue().reason()).isEqualTo("Venue flooded");
+	}
+
+	@Test
+	void given_blankReason_when_postCancel_then_returns400WithReasonFieldError() throws Exception {
+		// given
+		var id = UUID.randomUUID();
+		String body =
+				"""
+				{"reason": "   "}
+				""";
+
+		// when
+		var result = mockMvc.perform(post("/api/v1/events/{id}/cancel", id)
+				.contentType(MediaType.APPLICATION_JSON).content(body));
+
+		// then
+		result.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.errors.length()").value(1))
+				.andExpect(jsonPath("$.errors[0].field").value("reason"));
+		then(service).shouldHaveNoInteractions();
+	}
+
+	@Test
+	void given_alreadyCancelled_when_postCancel_then_returns409ProblemDetail() throws Exception {
+		// given
+		var id = UUID.randomUUID();
+		given(service.cancel(eq(id), any()))
+				.willReturn(new Rejected(RejectionReason.ALREADY_CANCELLED, EventStatus.CANCELLED));
+		String body =
+				"""
+				{"reason": "Second thoughts"}
+				""";
+
+		// when
+		var result = mockMvc.perform(post("/api/v1/events/{id}/cancel", id)
+				.contentType(MediaType.APPLICATION_JSON).content(body));
+
+		// then
+		result.andExpect(status().isConflict())
+				.andExpect(jsonPath("$.reason").value("ALREADY_CANCELLED"))
+				.andExpect(jsonPath("$.currentStatus").value("CANCELLED"));
 	}
 
 }

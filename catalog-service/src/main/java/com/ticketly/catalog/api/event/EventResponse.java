@@ -20,8 +20,13 @@ public record EventResponse(
 		UUID venueId,
 		EventStatus status,
 		List<TierResponse> tiers,
+		String cancellationReason,
+		Instant cancelledAt,
 		Instant createdAt,
-		Instant updatedAt) {
+		Instant updatedAt,
+		// Exposed so a client can see that the row changed under it; a future
+		// If-Match / ETag scheme would compare exactly this number.
+		long version) {
 
 	public static EventResponse from(Event event) {
 		return new EventResponse(
@@ -34,8 +39,11 @@ public record EventResponse(
 				event.getVenue().getId(),
 				event.getStatus(),
 				event.getTiers().stream().map(TierResponse::from).toList(),
+				event.getCancellationReason(),
+				event.getCancelledAt(),
 				event.getCreatedAt(),
-				event.getUpdatedAt());
+				event.getUpdatedAt(),
+				event.getVersion());
 	}
 
 }

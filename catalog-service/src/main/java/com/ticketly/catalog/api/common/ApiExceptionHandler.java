@@ -5,6 +5,7 @@ import jakarta.persistence.EntityNotFoundException;
 import java.util.List;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -36,6 +37,19 @@ public class ApiExceptionHandler {
 	public ProblemDetail onNotFound(EntityNotFoundException exception) {
 		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, exception.getMessage());
 		problem.setTitle("Resource not found");
+		return problem;
+	}
+
+	// 409 Conflict: another request changed the same event between this one's
+	// read and its write (@Version mismatch at flush). The transaction is
+	// already rolled back; the client must reload and decide again, which is
+	// why the service never retries on its own. Spring raises this out of the
+	// commit, translated from Hibernate's StaleObjectStateException.
+	@ExceptionHandler(ObjectOptimisticLockingFailureException.class)
+	public ProblemDetail onConcurrentModification(ObjectOptimisticLockingFailureException exception) {
+		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT,
+				"The event was modified by another request. Reload it and retry.");
+		problem.setTitle("Concurrent modification");
 		return problem;
 	}
 
