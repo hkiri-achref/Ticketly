@@ -1,4 +1,4 @@
-package com.ticketly.catalog.domain;
+package com.ticketly.catalog.domain.venue;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Embedded;

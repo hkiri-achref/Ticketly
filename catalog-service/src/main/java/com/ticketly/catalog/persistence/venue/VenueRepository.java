@@ -1,6 +1,6 @@
-package com.ticketly.catalog.persistence;
+package com.ticketly.catalog.persistence.venue;
 
-import com.ticketly.catalog.domain.Venue;
+import com.ticketly.catalog.domain.venue.Venue;
 import java.util.UUID;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;

@@ -1,0 +1,13 @@
+package com.ticketly.catalog.api.event;
+
+import com.ticketly.catalog.domain.event.TicketTier;
+import java.util.UUID;
+
+public record TierResponse(UUID id, String name, MoneyResponse price, int quantity, int maxPerBooking) {
+
+	public static TierResponse from(TicketTier tier) {
+		return new TierResponse(tier.getId(), tier.getName(), MoneyResponse.from(tier.getPrice()),
+				tier.getQuantity(), tier.getMaxPerBooking());
+	}
+
+}

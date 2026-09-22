@@ -34,6 +34,7 @@
 		<maven-pmd-plugin.version>3.28.0</maven-pmd-plugin.version>
 		<pmd.version>7.27.0</pmd.version>
 		<jacoco.version>0.8.15</jacoco.version>
+		<archunit.version>1.4.1</archunit.version>
 	</properties>
 	<dependencies>
 		<dependency>
@@ -117,6 +118,16 @@
 		<dependency>
 			<groupId>org.testcontainers</groupId>
 			<artifactId>testcontainers-postgresql</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<!-- ArchUnit: package-layout and layer-dependency rules run as a JUnit test
+		     (ArchitectureTest), so a class dropped at a layer root or an upward
+		     dependency fails `verify` like any other red test. Not managed by the
+		     Boot parent, so pinned here. -->
+		<dependency>
+			<groupId>com.tngtech.archunit</groupId>
+			<artifactId>archunit-junit5</artifactId>
+			<version>${archunit.version}</version>
 			<scope>test</scope>
 		</dependency>
 	</dependencies>

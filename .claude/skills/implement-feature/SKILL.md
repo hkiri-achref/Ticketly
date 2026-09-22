@@ -24,6 +24,12 @@ We are IMPLEMENTING feature $ARGUMENTS of Ticketly from its approved plan.
 2. Follow the plan. If you must deviate (an API does not exist in Boot 4.1, the plan missed
    something), STOP, explain, get my OK, then record it under "## Deviations" in the plan.
 3. For every modern Java or Spring Boot 4 feature used, add a 1–3 line comment explaining WHY.
+   **Package placement:** every new class goes into `<layer>/<aggregate>/` (or `<layer>/common/`
+   when shared), exactly as the plan's Design table states — never directly under `api/`,
+   `application/`, `domain/` or `persistence/`. Tests mirror the main package. If the plan
+   gives no package for a component, STOP and ask rather than guessing. `ArchitectureTest`
+   (ArchUnit) fails `verify` on a class at a layer root or on an upward dependency
+   (e.g. a service importing a request record): fix the placement, never the rule.
 4. Commit as you go, one logical change per commit, in Conventional Commits format:
    `<type>(<service>): <imperative summary>` — e.g. `feat(catalog): add venue CRUD endpoints`,
    `test(catalog): cover venue not-found path`, `build(catalog): bump springdoc`.
@@ -55,5 +61,6 @@ We are IMPLEMENTING feature $ARGUMENTS of Ticketly from its approved plan.
      expect, plus which automated test covers what.
    Keep it a readable narrative, not a checklist dump.
 
-Rules: no Lombok, constructor injection, records vs entities per CLAUDE.md.
+Rules: no Lombok, constructor injection, records vs entities per CLAUDE.md,
+package layout per REQUIREMENTS.md §5.2 (layer → aggregate sub-package).
 Never implement anything from later features. Never work on `main`.

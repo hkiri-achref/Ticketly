@@ -1,4 +1,4 @@
-package com.ticketly.catalog.api;
+package com.ticketly.catalog.api.venue;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -9,10 +9,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.ticketly.catalog.application.VenueService;
+import com.ticketly.catalog.application.venue.VenueService;
 import com.ticketly.catalog.config.WebConfig;
-import com.ticketly.catalog.domain.Address;
-import com.ticketly.catalog.domain.Venue;
+import com.ticketly.catalog.domain.venue.Address;
+import com.ticketly.catalog.domain.venue.Venue;
 import jakarta.persistence.EntityNotFoundException;
 import java.util.List;
 import java.util.UUID;

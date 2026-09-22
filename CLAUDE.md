@@ -47,7 +47,11 @@ Spring Kafka 4, Spring Security 7 + Keycloak, Spring Cloud 2025.1.2+, Testcontai
 ## Layout
 Monorepo: `infra/`, `docs/adr/`, `docs/plans/`, `docs/learning-notes/`, `http/`,
 one Maven project per service (`catalog-service/`, `booking-service/`, ...).
-Package layout per service: REQUIREMENTS.md §5.2.
+Package layout per service: REQUIREMENTS.md §5.2 — layers first (`api/`, `application/`,
+`domain/`, `persistence/`), then ONE sub-package per aggregate root inside each layer
+(`api/event/`, `domain/event/`, ...) plus `<layer>/common/` for shared pieces. Never put a
+class directly under a layer root; children stay with their root (`TicketTier` → `event`).
+Dependencies point downwards only (`api → application → domain`); `ArchitectureTest` enforces it.
 
 ## Definition of done
 Zero warnings, migration if schema changed, tests green, OpenAPI updated,

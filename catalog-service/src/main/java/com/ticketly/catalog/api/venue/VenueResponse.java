@@ -1,6 +1,6 @@
-package com.ticketly.catalog.api;
+package com.ticketly.catalog.api.venue;
 
-import com.ticketly.catalog.domain.Venue;
+import com.ticketly.catalog.domain.venue.Venue;
 import java.time.Instant;
 import java.util.UUID;
 

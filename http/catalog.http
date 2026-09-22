@@ -33,6 +33,85 @@ GET http://localhost:8080/api/v1/venues/00000000-0000-0000-0000-000000000000
 ### F-02 — List venues by city, paged (case-insensitive; omit city for all)
 GET http://localhost:8080/api/v1/venues?city=paris&page=0&size=20
 
+### F-03 — Create a DRAFT event (201 + Location). Paste a venue id from the F-02 create response.
+POST http://localhost:8080/api/v1/events
+Content-Type: application/json
+
+{
+  "title": "Summer Concert",
+  "description": "A night of music",
+  "startsAt": "2027-06-01T19:00:00Z",
+  "endsAt": "2027-06-01T22:00:00Z",
+  "venueId": "00000000-0000-0000-0000-000000000000"
+}
+
+### F-03 — Unknown venue (404 ProblemDetail)
+POST http://localhost:8080/api/v1/events
+Content-Type: application/json
+
+{
+  "title": "Summer Concert",
+  "startsAt": "2027-06-01T19:00:00Z",
+  "endsAt": "2027-06-01T22:00:00Z",
+  "venueId": "00000000-0000-0000-0000-000000000000"
+}
+
+### F-03 — Update title/description/dates (200). Paste an event id.
+PUT http://localhost:8080/api/v1/events/00000000-0000-0000-0000-000000000000
+Content-Type: application/json
+
+{
+  "title": "Summer Concert (moved)",
+  "description": "Now in the main hall",
+  "startsAt": "2027-06-02T19:00:00Z",
+  "endsAt": "2027-06-02T22:00:00Z"
+}
+
+### F-03 — Ends before it starts (422 ProblemDetail: business rule, not validation)
+PUT http://localhost:8080/api/v1/events/00000000-0000-0000-0000-000000000000
+Content-Type: application/json
+
+{
+  "title": "Summer Concert",
+  "startsAt": "2027-06-02T22:00:00Z",
+  "endsAt": "2027-06-02T19:00:00Z"
+}
+
+### F-03 — Add a ticket tier (201, no Location; body is the whole event with tiers[]).
+### maxPerBooking is optional and defaults to 8.
+POST http://localhost:8080/api/v1/events/00000000-0000-0000-0000-000000000000/tiers
+Content-Type: application/json
+
+{
+  "name": "Standard",
+  "price": {"amount": 49.90, "currency": "EUR"},
+  "quantity": 6000
+}
+
+### F-03 — Tier that overshoots venue capacity (422 ProblemDetail)
+POST http://localhost:8080/api/v1/events/00000000-0000-0000-0000-000000000000/tiers
+Content-Type: application/json
+
+{
+  "name": "VIP",
+  "price": {"amount": 149.00, "currency": "EUR"},
+  "quantity": 1000,
+  "maxPerBooking": 4
+}
+
+### F-03 — Tier validation failure (400 with nested price.* field errors)
+POST http://localhost:8080/api/v1/events/00000000-0000-0000-0000-000000000000/tiers
+Content-Type: application/json
+
+{
+  "name": "",
+  "price": {"amount": 1.999, "currency": "eur"},
+  "quantity": 0
+}
+
+### F-03 — Get an event including its tiers (200 / 404 ProblemDetail)
+GET http://localhost:8080/api/v1/events/00000000-0000-0000-0000-000000000000
+
 ### OpenAPI document (what Swagger UI renders)
 GET http://localhost:8080/v3/api-docs
 

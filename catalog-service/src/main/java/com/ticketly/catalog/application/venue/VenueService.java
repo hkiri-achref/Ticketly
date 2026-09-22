@@ -1,9 +1,7 @@
-package com.ticketly.catalog.application;
+package com.ticketly.catalog.application.venue;
 
-import com.ticketly.catalog.api.CreateVenueRequest;
-import com.ticketly.catalog.domain.Address;
-import com.ticketly.catalog.domain.Venue;
-import com.ticketly.catalog.persistence.VenueRepository;
+import com.ticketly.catalog.domain.venue.Venue;
+import com.ticketly.catalog.persistence.venue.VenueRepository;
 import jakarta.persistence.EntityNotFoundException;
 import java.util.UUID;
 import org.springframework.data.domain.Page;
@@ -26,9 +24,8 @@ public class VenueService {
 	}
 
 	@Transactional
-	public Venue create(CreateVenueRequest request) {
-		var address = new Address(request.address().street(), request.address().city(), request.address().country());
-		return repository.save(new Venue(request.name(), address, request.capacity()));
+	public Venue create(CreateVenueCommand command) {
+		return repository.save(new Venue(command.name(), command.address(), command.capacity()));
 	}
 
 	public Venue getById(UUID id) {

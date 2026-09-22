@@ -1,6 +1,6 @@
-package com.ticketly.catalog.api;
+package com.ticketly.catalog.api.venue;
 
-import com.ticketly.catalog.application.VenueService;
+import com.ticketly.catalog.application.venue.VenueService;
 import jakarta.validation.Valid;
 import java.net.URI;
 import java.util.UUID;
@@ -32,7 +32,7 @@ public class VenueController {
 	// MethodArgumentNotValidException before this method body ever runs.
 	@PostMapping
 	public ResponseEntity<VenueResponse> create(@Valid @RequestBody CreateVenueRequest request) {
-		var venue = service.create(request);
+		var venue = service.create(request.toCommand());
 		// 201 + Location (REST contract for "created"): built from the current
 		// request so it survives host/port/context-path changes.
 		URI location = ServletUriComponentsBuilder.fromCurrentRequest()

@@ -1,4 +1,4 @@
-package com.ticketly.catalog.api;
+package com.ticketly.catalog.api.ping;
 
 import com.ticketly.catalog.config.CatalogProperties;
 import java.time.Instant;

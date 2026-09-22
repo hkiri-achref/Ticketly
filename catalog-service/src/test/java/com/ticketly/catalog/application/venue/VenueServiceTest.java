@@ -1,4 +1,4 @@
-package com.ticketly.catalog.application;
+package com.ticketly.catalog.application.venue;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -6,10 +6,9 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 
-import com.ticketly.catalog.api.CreateVenueRequest;
-import com.ticketly.catalog.domain.Address;
-import com.ticketly.catalog.domain.Venue;
-import com.ticketly.catalog.persistence.VenueRepository;
+import com.ticketly.catalog.domain.venue.Address;
+import com.ticketly.catalog.domain.venue.Venue;
+import com.ticketly.catalog.persistence.venue.VenueRepository;
 import jakarta.persistence.EntityNotFoundException;
 import java.util.List;
 import java.util.Optional;
@@ -42,15 +41,15 @@ class VenueServiceTest {
 	private VenueService service;
 
 	@Test
-	void given_validRequest_when_create_then_savesVenueBuiltFromRequest() {
+	void given_validCommand_when_create_then_savesVenueBuiltFromCommand() {
 		// given
-		var request = new CreateVenueRequest("Le Zénith", 6293,
-				new CreateVenueRequest.AddressPayload("211 Avenue Jean Jaurès", "Paris", "France"));
+		var command = new CreateVenueCommand("Le Zénith",
+				new Address("211 Avenue Jean Jaurès", "Paris", "France"), 6293);
 		// Echo back whatever entity the service built, so we can inspect it.
 		given(repository.save(any(Venue.class))).willAnswer(invocation -> invocation.getArgument(0));
 
 		// when
-		var created = service.create(request);
+		var created = service.create(command);
 
 		// then
 		assertThat(created.getId()).isNotNull();

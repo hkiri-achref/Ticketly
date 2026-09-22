@@ -1,10 +1,10 @@
-package com.ticketly.catalog.persistence;
+package com.ticketly.catalog.persistence.venue;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.ticketly.catalog.TestcontainersConfiguration;
-import com.ticketly.catalog.domain.Address;
-import com.ticketly.catalog.domain.Venue;
+import com.ticketly.catalog.domain.venue.Address;
+import com.ticketly.catalog.domain.venue.Venue;
 import jakarta.persistence.EntityManager;
 import java.util.Map;
 import org.junit.jupiter.api.Test;

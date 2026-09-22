@@ -228,6 +228,28 @@ com.ticketly.catalog
 
 Keep this layered layout. Hexagonal/ports-and-adapters is a good Phase 7 refactoring exercise, not a starting point.
 
+**Inside each layer, one sub-package per aggregate root.** No class may sit directly under a
+layer root (`api/`, `application/`, `domain/`, `persistence/`, `messaging/`, `client/`):
+
+```
+api/common/         ApiExceptionHandler and other cross-cutting web pieces
+api/venue/          VenueController, CreateVenueRequest, VenueResponse
+api/event/          EventController, *Request, *Response (tiers belong to the Event aggregate)
+application/venue/  VenueService, CreateVenueCommand
+application/event/  EventService, CreateEventCommand, AddTierCommand, ...
+domain/common/      Money, DomainRuleViolationException (shared value types / base exceptions)
+domain/venue/       Venue, Address
+domain/event/       Event, TicketTier, EventStatus, CapacityExceededException, ...
+persistence/venue/  VenueRepository        persistence/event/  EventRepository
+```
+
+- The sub-package is named after the **aggregate root**; children live with their root
+  (`TicketTier` → `event`, never a `tier` package). `common` is for pieces used by two or more
+  aggregates. `config/` keeps its flat shape.
+- Dependencies point downwards only: `api → application → domain`, `persistence → domain`.
+  The application layer never imports an `api` type (it takes command records).
+- Both rules are enforced by `ArchitectureTest` (ArchUnit) in every service; a red rule fails `./mvnw verify`.
+
 ### 5.3 Coding conventions
 
 - Java 25 language level; `--enable-preview` **off** (keep to final features; structured concurrency is explored in one isolated optional feature).

@@ -1,5 +1,7 @@
-package com.ticketly.catalog.api;
+package com.ticketly.catalog.api.venue;
 
+import com.ticketly.catalog.application.venue.CreateVenueCommand;
+import com.ticketly.catalog.domain.venue.Address;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -23,6 +25,12 @@ public record CreateVenueRequest(
 		if (name != null) {
 			name = name.strip();
 		}
+	}
+
+	// The request → command mapping lives at the edge: the application layer
+	// receives domain-typed input and never sees the HTTP shape.
+	public CreateVenueCommand toCommand() {
+		return new CreateVenueCommand(name, new Address(address.street(), address.city(), address.country()), capacity);
 	}
 
 	// Nested record: the address shape only exists as part of this request, so
