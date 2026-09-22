@@ -1,7 +1,7 @@
 ---
 feature: F-04
 title: Event lifecycle: publish and cancel
-status: approved
+status: implemented
 approved_on: 2026-09-22
 requirements: REQUIREMENTS.md#F-04
 depends_on: [F-03]
@@ -91,14 +91,14 @@ check-then-act gap in `addTier`.
 | Version starts at 0 and increments on flush | `@DataJpaTest` | `EventRepositoryTest.given_savedEvent_when_publishedAndFlushed_then_versionIncremented` |
 
 ## Implementation steps
-- [ ] 1. `V4__event_lifecycle.sql`.
-- [ ] 2. `RejectionReason`, `TransitionResult`, `EventNotEditableException`.
-- [ ] 3. `Event`: `@Version`, cancellation fields, `publish`, `cancel`, CANCELLED guard + `EventTest`.
-- [ ] 4. `EventRepositoryTest`: version increment, two-thread optimistic lock.
-- [ ] 5. `CancelEventCommand`, `EventService.publish/cancel` (+ F-15 TODO) + `EventServiceTest`.
-- [ ] 6. `CancelEventRequest`, `EventResponse` fields, `EventController` switch, 409 handler + `EventControllerTest`.
-- [ ] 7. `./mvnw verify`; Swagger pass; update `http/catalog.http`.
-- [ ] 8. Learning note `docs/learning-notes/F-04.md` (when to prefer exceptions over a sealed result; `If-Match`); plan `status: implemented`.
+- [x] 1. `V4__event_lifecycle.sql`.
+- [x] 2. `RejectionReason`, `TransitionResult`, `EventNotEditableException`.
+- [x] 3. `Event`: `@Version`, cancellation fields, `publish`, `cancel`, CANCELLED guard + `EventTest`.
+- [x] 4. `EventRepositoryTest`: version increment, two-thread optimistic lock.
+- [x] 5. `CancelEventCommand`, `EventService.publish/cancel` (+ F-15 TODO) + `EventServiceTest`.
+- [x] 6. `CancelEventRequest`, `EventResponse` fields, `EventController` switch, 409 handler + `EventControllerTest`.
+- [x] 7. `./mvnw verify`; Swagger pass; update `http/catalog.http`.
+- [x] 8. Learning note `docs/learning-notes/F-04.md` (when to prefer exceptions over a sealed result; `If-Match`); plan `status: implemented`.
 
 ## Learning focus
 Sealed interfaces + record patterns + exhaustive switch; `@Version` and
@@ -109,4 +109,15 @@ surface it to an HTTP client?" and "When would you model business outcomes as
 a sealed result type instead of exceptions?"
 
 ## Deviations
-(filled during implementation)
+None of substance. Notes for transparency:
+- `RejectionReason`'s accessor is `getMessage()` (not `message()`): PMD's
+  `AvoidFieldNameMatchingMethodName` fires on enums, unlike records.
+- The rejected-transition `ProblemDetail` carries two extension members,
+  `reason` and `currentStatus`, so a client can branch without parsing text.
+- The version-increment test adds the tier BEFORE the first flush: any
+  flushed change (addTier bumps `updated_at`) increments `version`, not only
+  `publish()`; the first draft of the test learned this the hard way.
+- The two-thread test uses `Executors.newVirtualThreadPerTaskExecutor()` in a
+  try-with-resources (ExecutorService is AutoCloseable since Java 19).
+- The reason → status mapping is a `@ParameterizedTest` over all four enum
+  constants rather than four hand-written tests.
