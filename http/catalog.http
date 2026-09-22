@@ -112,6 +112,38 @@ Content-Type: application/json
 ### F-03 — Get an event including its tiers (200 / 404 ProblemDetail)
 GET http://localhost:8080/api/v1/events/00000000-0000-0000-0000-000000000000
 
+### F-04 — Publish an event (200; 422 if no tiers / starts in past; 409 if already published or cancelled)
+POST http://localhost:8080/api/v1/events/00000000-0000-0000-0000-000000000000/publish
+
+### F-04 — Publish twice: second call is a 409 ProblemDetail with reason ALREADY_PUBLISHED
+POST http://localhost:8080/api/v1/events/00000000-0000-0000-0000-000000000000/publish
+
+### F-04 — Cancel an event (200; 409 if already cancelled; 400 if reason is blank)
+POST http://localhost:8080/api/v1/events/00000000-0000-0000-0000-000000000000/cancel
+Content-Type: application/json
+
+{
+  "reason": "Venue flooded"
+}
+
+### F-04 — Cancel validation failure (400 with a `reason` field error)
+POST http://localhost:8080/api/v1/events/00000000-0000-0000-0000-000000000000/cancel
+Content-Type: application/json
+
+{
+  "reason": ""
+}
+
+### F-04 — Editing a cancelled event is refused (422 ProblemDetail)
+PUT http://localhost:8080/api/v1/events/00000000-0000-0000-0000-000000000000
+Content-Type: application/json
+
+{
+  "title": "Concert (moved)",
+  "startsAt": "2027-06-01T19:00:00Z",
+  "endsAt": "2027-06-01T22:00:00Z"
+}
+
 ### OpenAPI document (what Swagger UI renders)
 GET http://localhost:8080/v3/api-docs
 

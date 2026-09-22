@@ -16,7 +16,7 @@ public enum RejectionReason {
 		this.message = message;
 	}
 
-	public String message() {
+	public String getMessage() {
 		return message;
 	}
 

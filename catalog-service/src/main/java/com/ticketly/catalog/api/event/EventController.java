@@ -90,7 +90,7 @@ public class EventController {
 			case Ok(var event) -> ResponseEntity.ok(EventResponse.from(event));
 			case Rejected(var reason, var currentStatus) -> {
 				var status = statusFor(reason);
-				var problem = ProblemDetail.forStatusAndDetail(status, reason.message());
+				var problem = ProblemDetail.forStatusAndDetail(status, reason.getMessage());
 				problem.setTitle("Transition rejected");
 				problem.setProperty("reason", reason);
 				problem.setProperty("currentStatus", currentStatus);

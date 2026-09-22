@@ -323,7 +323,7 @@ class EventControllerTest {
 				.andExpect(header().string("Content-Type", MediaType.APPLICATION_PROBLEM_JSON_VALUE))
 				.andExpect(jsonPath("$.status").value(expectedStatus))
 				.andExpect(jsonPath("$.title").value("Transition rejected"))
-				.andExpect(jsonPath("$.detail").value(reason.message()))
+				.andExpect(jsonPath("$.detail").value(reason.getMessage()))
 				.andExpect(jsonPath("$.reason").value(reason.name()))
 				.andExpect(jsonPath("$.currentStatus").value(currentStatus.name()));
 	}
