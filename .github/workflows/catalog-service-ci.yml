@@ -1,0 +1,49 @@
+# CI for catalog-service. Runs the exact same `./mvnw verify` as a developer
+# (Checkstyle, PMD, tests on Testcontainers, JaCoCo >= 90%), so CI and local
+# never drift.
+#
+# Deliberately NO workflow-level `paths:` filter: the `verify` job is a required
+# status check on `main`, and a required check that never triggers would block
+# docs-only or other-service PRs forever. Instead the job always runs, detects
+# changes itself, and exits green early when this service is untouched.
+name: catalog-service CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# One run per branch: a new push cancels the previous, still-running one.
+concurrency:
+  group: catalog-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: dorny/paths-filter@v3
+        id: changes
+        with:
+          filters: |
+            service:
+              - 'catalog-service/**'
+              - 'config/**'
+              - '.github/workflows/catalog-service-ci.yml'
+
+      - if: steps.changes.outputs.service == 'true'
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: maven
+
+      # Docker is preinstalled on ubuntu-latest, so Testcontainers just works.
+      - if: steps.changes.outputs.service == 'true'
+        run: ./mvnw --batch-mode --no-transfer-progress verify
+        working-directory: catalog-service
+
+      - if: steps.changes.outputs.service != 'true'
+        run: echo "catalog-service untouched — skipping verify (check reports success)."
