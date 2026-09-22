@@ -1,5 +1,6 @@
 package com.ticketly.catalog.api;
 
+import com.ticketly.catalog.domain.DomainRuleViolationException;
 import jakarta.persistence.EntityNotFoundException;
 import java.util.List;
 import org.springframework.http.HttpStatus;
@@ -35,6 +36,19 @@ public class ApiExceptionHandler {
 	public ProblemDetail onNotFound(EntityNotFoundException exception) {
 		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, exception.getMessage());
 		problem.setTitle("Resource not found");
+		return problem;
+	}
+
+	// 422: the request was well-formed (else 400) and the resource exists (else
+	// 404), but a business rule says no. One handler for the whole hierarchy
+	// — F-04's state-transition failures will map here without a new method.
+	// UNPROCESSABLE_CONTENT is RFC 9110's name for 422; Spring 7 deprecates the
+	// older UNPROCESSABLE_ENTITY constant in its favour.
+	@ExceptionHandler(DomainRuleViolationException.class)
+	public ProblemDetail onDomainRuleViolation(DomainRuleViolationException exception) {
+		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.UNPROCESSABLE_CONTENT,
+				exception.getMessage());
+		problem.setTitle("Business rule violated");
 		return problem;
 	}
 
