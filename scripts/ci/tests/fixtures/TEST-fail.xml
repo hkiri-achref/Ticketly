@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.ticketly.catalog.api.VenueControllerTest" time="0.6" tests="3" errors="1" skipped="1" failures="1">
+  <testcase name="given_unknown_id_when_get_then_404" classname="com.ticketly.catalog.api.VenueControllerTest" time="0.1">
+    <failure message="Status expected:&lt;404&gt; but was:&lt;500&gt; | %25" type="java.lang.AssertionError">java.lang.AssertionError: Status expected:&lt;404&gt; but was:&lt;500&gt;
+	at ...</failure>
+  </testcase>
+  <testcase name="given_db_down_when_get_then_error" classname="com.ticketly.catalog.api.VenueControllerTest" time="0.1">
+    <error type="java.lang.IllegalStateException">java.lang.IllegalStateException: boom
+	at ...</error>
+  </testcase>
+  <testcase name="given_skip_when_run_then_skipped" classname="com.ticketly.catalog.api.VenueControllerTest" time="0">
+    <skipped/>
+  </testcase>
+</testsuite>

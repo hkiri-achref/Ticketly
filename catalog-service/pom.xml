@@ -131,7 +131,14 @@
 			<!-- ===== Quality gates (see docs/adr/0002-quality-gates.md) =====
 			     Shared rulesets live at the repo root (../config) so every service
 			     applies the same rules. Plugin versions are pinned here because the
-			     Boot parent does not manage them. -->
+			     Boot parent does not manage them.
+
+			     CI does not run `verify` in one go: it invokes these plugins as
+			     separate jobs (checkstyle:check / package / jacoco:report@report /
+			     jacoco:check@check / compile pmd:check) with the configuration below,
+			     so a change to a binding, an execution id or an output path here must
+			     be mirrored in .github/workflows/catalog-service-ci.yml. The command
+			     map lives in docs/learning-notes/ci-checks.md. -->
 
 			<!-- Checkstyle: formatting/style, bound early (validate) so a style slip
 			     fails before we spend time compiling and running tests. -->

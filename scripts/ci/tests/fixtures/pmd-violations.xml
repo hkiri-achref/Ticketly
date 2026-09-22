@@ -1,0 +1,9 @@
+<pmd xmlns="http://pmd.sourceforge.net/report/2.0.0" version="7.27.0" timestamp="2026-09-22T13:24:40.491">
+<file name="/work/catalog-service/src/main/java/com/ticketly/catalog/application/VenueService.java">
+<violation beginline="41" endline="41" begincolumn="9" endcolumn="20" rule="UnusedLocalVariable" ruleset="Best Practices" package="com.ticketly.catalog.application" class="VenueService" method="create" variable="unused" externalInfoUrl="https://docs.pmd-code.org/pmd-doc-7.27.0/pmd_rules_java_bestpractices.html#unusedlocalvariable" priority="3">
+Avoid unused local variables such as 'unused'.
+</violation>
+</file>
+<error filename="/work/catalog-service/src/main/java/Broken.java" msg="ParseException: cannot parse &amp; stuff">
+</error>
+</pmd>

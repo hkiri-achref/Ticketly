@@ -13,7 +13,9 @@ had ad-hoc names, and no tool checked style or coverage.
 
 ## Decision
 
-Every service runs four gates inside plain `./mvnw verify`, in this order:
+Every service runs four gates inside plain `./mvnw verify`. Lifecycle order:
+`validate` (Checkstyle) → `compile` → `test` (Surefire + JaCoCo agent) →
+`package` (Boot JAR) → `verify` (PMD, JaCoCo report, JaCoCo ≥ 90% check).
 
 | Gate | Tool | Bound to | Rule |
 |---|---|---|---|
@@ -34,25 +36,47 @@ Tests follow that naming and are structured in three visible sections
 (`// given`, `// when`, `// then`).
 
 CI is one GitHub Actions workflow per service in `.github/workflows/`,
-running the same `./mvnw verify` on every pull request and on pushes to
-`main`. `main` is protected: the service check must pass and even admins
-cannot merge past a red check. The workflow has **no** workflow-level `paths:`
-filter — a required check that never triggers would block unrelated PRs
-forever — so the job always starts, detects changes with `dorny/paths-filter`,
-and exits green early when the service is untouched.
+running on every pull request, on pushes to `main`, and on manual dispatch.
+It runs the **same plugins, versions, rules and thresholds** (all read from
+the service pom) but as **independent jobs** — `checkstyle`, `tests`
+(package → `jacoco:report@report` → `jacoco:check@check`), `pmd`, and a
+CodeQL `security` scan — so a style error cannot hide the test result and each
+failure has its own log, artifact and summary. A final job named `verify`
+aggregates them with an explicit decision table (any failure, cancellation or
+unexpected skip of a required job fails it; a change-detection error fails
+it). `verify` is the only required status check. The workflow has **no**
+workflow-level `paths:` filter — a required check that never triggers would
+block unrelated PRs forever — so a `changes` job always runs, detects changes
+with `dorny/paths-filter`, and `verify` reports success with a reason when
+the service is untouched. Details, command map and the reasoning:
+`docs/learning-notes/ci-checks.md`.
+
+Security: CodeQL (`github/codeql-action`, pinned to a release SHA, default
+Java suite) blocks on any finding with security severity ≥ 7.0 and lists
+lower severities without blocking. It is CI-only; local `verify` covers the
+Maven gates.
+
+Branch protection on `main` (required check `verify`, admins included) is the
+intent of this ADR. Remote protection could **not be verified** at the time of
+the CI split (the `gh` session had no valid github.com token); the recipe
+below configures it and must be run and checked before this line is updated.
 
 Branches are named `feat/F-XX-<plan-slug>` (or `fix/...`, `chore/...`), and
 commits follow Conventional Commits: `<type>(<service>): <imperative summary>`.
 
 Why these tools: Checkstyle and PMD are pure Maven plugins (no SaaS, no
 token, tunable per rule); JaCoCo instruction coverage is the least gameable
-counter; a full `verify` in CI means zero drift between CI and a laptop.
+counter; CI and the laptop read the same pom, so rules cannot drift.
 
 ## Consequences
 
 - A red gate blocks the merge; fix the code or fix the shared rule, never
   suppress locally.
 - Integration tests need Docker, on the laptop and on `ubuntu-latest`.
+- CI runs selected Maven goals separately instead of one `verify`; a new
+  execution or output path in the pom must be mirrored in the workflow
+  (the pom's quality-gates comment says so). Split builds trade a little
+  duplicated compilation for readable, independent results.
 - Plugin versions are pinned per service pom because the Boot parent does not
   manage them; hoist into a shared parent pom once a second service exists.
 - PMD prints a "current platform jrt-fs.jar" warning when the local JDK is
@@ -66,9 +90,10 @@ counter; a full `verify` in CI means zero drift between CI and a laptop.
    and change the JaCoCo exclusion to the new `**/<Name>Application.class`.
 2. **Workflow** — copy `.github/workflows/catalog-service-ci.yml` to
    `<service>-ci.yml`; rename the workflow `name`, the concurrency group
-   (`<service>-ci-${{ github.ref }}`), the `working-directory`, and the three
-   filter paths (`<service>/**`, `config/**`, the workflow file itself). Keep
-   the job id `verify`.
+   (`<service>-ci-${{ github.ref }}`), the `SERVICE` env, every
+   `working-directory`, the artifact/report paths, the CodeQL `source-root`,
+   and the filter paths (`<service>/**`, `config/**`, `scripts/ci/**`, the
+   workflow file itself). Keep the job id `verify`.
 3. **Branch protection** — the required check is reported as
    `<workflow name> / verify` (see below); add it to the `contexts` array:
 

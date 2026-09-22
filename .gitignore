@@ -37,3 +37,5 @@ build/
 
 ### Mac OS ###
 .DS_Store
+### Python (scripts/ci)
+__pycache__/

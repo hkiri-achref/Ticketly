@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<checkstyle version="14.1.0">
+<file name="/work/catalog-service/src/main/java/com/ticketly/catalog/api/Weird|Name`.java">
+<error line="12" column="5" severity="error" message="Line is longer than 120 characters | see &lt;b&gt;docs&lt;/b&gt;: 100%,done
+second line" source="com.puppycrawl.tools.checkstyle.checks.sizes.LineLengthCheck"/>
+<error line="30" severity="error" message="Missing a Javadoc comment." source="com.puppycrawl.tools.checkstyle.checks.javadoc.MissingJavadocMethodCheck"/>
+</file>
+</checkstyle>

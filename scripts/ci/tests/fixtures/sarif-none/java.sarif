@@ -1,0 +1,1 @@
+{"version": "2.1.0", "runs": [{"tool": {"driver": {"name": "CodeQL", "rules": [{"id": "java/x", "helpUri": "https://codeql.github.com/codeql-query-help/java/java/x/", "defaultConfiguration": {"level": "warning"}, "properties": {"security-severity": "8.0"}}]}}, "automationDetails": {"id": "/language:java-kotlin/"}, "invocations": [{"executionSuccessful": true}], "results": []}]}
