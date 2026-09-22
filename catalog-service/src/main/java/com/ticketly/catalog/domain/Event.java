@@ -59,8 +59,11 @@ public class Event {
 	// orphanRemoval: a tier dropped from this list is DELETEd at flush — the
 	// child's life is bound to its membership in the parent. @OneToMany is
 	// LAZY by default, which is what we want (and what the tests probe).
+	// final: the REFERENCE never changes, only the contents. Hibernate still
+	// swaps in its PersistentBag on load — through reflection, which is allowed
+	// to write a final instance field (only records/hidden classes forbid it).
 	@OneToMany(mappedBy = "event", cascade = CascadeType.ALL, orphanRemoval = true)
-	private List<TicketTier> tiers = new ArrayList<>();
+	private final List<TicketTier> tiers = new ArrayList<>();
 
 	@Column(name = "created_at", nullable = false)
 	private Instant createdAt;
