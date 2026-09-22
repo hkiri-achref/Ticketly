@@ -7,7 +7,7 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 import org.testcontainers.utility.DockerImageName;
 
 @TestConfiguration(proxyBeanMethods = false)
-class TestcontainersConfiguration {
+public class TestcontainersConfiguration {
 
 	// @ServiceConnection: the container bean itself tells Spring its JDBC
 	// URL/credentials once started — replaces the old @DynamicPropertySource

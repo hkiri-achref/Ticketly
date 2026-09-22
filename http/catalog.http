@@ -7,6 +7,32 @@ GET http://localhost:8080/api/v1/ping
 ### Actuator health (liveness + readiness groups)
 GET http://localhost:8080/actuator/health
 
+### F-02 — Create a venue (201 + Location header)
+POST http://localhost:8080/api/v1/venues
+Content-Type: application/json
+
+{
+  "name": "Le Zénith",
+  "capacity": 6293,
+  "address": {"street": "211 Avenue Jean Jaurès", "city": "Paris", "country": "France"}
+}
+
+### F-02 — Validation failure (400 ProblemDetail with errors[])
+POST http://localhost:8080/api/v1/venues
+Content-Type: application/json
+
+{
+  "name": "ab",
+  "capacity": 0,
+  "address": {"street": "", "city": "Paris", "country": "France"}
+}
+
+### F-02 — Get a venue by id (200 / 404 ProblemDetail) — paste an id from the create response
+GET http://localhost:8080/api/v1/venues/00000000-0000-0000-0000-000000000000
+
+### F-02 — List venues by city, paged (case-insensitive; omit city for all)
+GET http://localhost:8080/api/v1/venues?city=paris&page=0&size=20
+
 ### OpenAPI document (what Swagger UI renders)
 GET http://localhost:8080/v3/api-docs
 
