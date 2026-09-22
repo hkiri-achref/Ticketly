@@ -1,0 +1,14 @@
+<?xml version="1.0"?>
+<!DOCTYPE suppressions PUBLIC
+        "-//Checkstyle//DTD SuppressionFilter Configuration 1.2//EN"
+        "https://checkstyle.org/dtds/suppressions_1_2.dtd">
+
+<!--
+    Test-scoped relaxations only. Production code gets no suppressions.
+    Test methods are named given_<state>_when_<action>_then_<outcome>, so the
+    camelCase method-name checks (MethodName and Google's GoogleMethodName —
+    "MethodName" is a regex that matches both) are switched off under src/test.
+-->
+<suppressions>
+  <suppress checks="MethodName" files="[\\/]src[\\/]test[\\/]"/>
+</suppressions>
