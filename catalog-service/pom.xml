@@ -28,6 +28,12 @@
 	</scm>
 	<properties>
 		<java.version>25</java.version>
+		<!-- Quality-gate tooling; not managed by the Boot parent, so pinned here. -->
+		<maven-checkstyle-plugin.version>3.6.0</maven-checkstyle-plugin.version>
+		<checkstyle.version>14.1.0</checkstyle.version>
+		<maven-pmd-plugin.version>3.28.0</maven-pmd-plugin.version>
+		<pmd.version>7.27.0</pmd.version>
+		<jacoco.version>0.8.15</jacoco.version>
 	</properties>
 	<dependencies>
 		<dependency>
@@ -120,6 +126,155 @@
 			<plugin>
 				<groupId>org.springframework.boot</groupId>
 				<artifactId>spring-boot-maven-plugin</artifactId>
+			</plugin>
+
+			<!-- ===== Quality gates (see docs/adr/0002-quality-gates.md) =====
+			     Shared rulesets live at the repo root (../config) so every service
+			     applies the same rules. Plugin versions are pinned here because the
+			     Boot parent does not manage them. -->
+
+			<!-- Checkstyle: formatting/style, bound early (validate) so a style slip
+			     fails before we spend time compiling and running tests. -->
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-checkstyle-plugin</artifactId>
+				<version>${maven-checkstyle-plugin.version}</version>
+				<dependencies>
+					<!-- The plugin bundles an old Checkstyle; override it so Java 25
+					     syntax (records, patterns, text blocks) is parsed correctly. -->
+					<dependency>
+						<groupId>com.puppycrawl.tools</groupId>
+						<artifactId>checkstyle</artifactId>
+						<version>${checkstyle.version}</version>
+					</dependency>
+				</dependencies>
+				<configuration>
+					<configLocation>../config/checkstyle/checkstyle.xml</configLocation>
+					<!-- Exposed to the ruleset as ${checkstyle.suppressions.file}. -->
+					<suppressionsLocation>../config/checkstyle/suppressions.xml</suppressionsLocation>
+					<includeTestSourceDirectory>true</includeTestSourceDirectory>
+					<consoleOutput>true</consoleOutput>
+					<failOnViolation>true</failOnViolation>
+				</configuration>
+				<executions>
+					<execution>
+						<id>checkstyle-check</id>
+						<phase>validate</phase>
+						<goals>
+							<goal>check</goal>
+						</goals>
+					</execution>
+				</executions>
+			</plugin>
+
+			<!-- PMD: clean-code analysis (unused code, complexity, error-prone
+			     constructs) on main sources; bound to verify with the other gates. -->
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-pmd-plugin</artifactId>
+				<version>${maven-pmd-plugin.version}</version>
+				<dependencies>
+					<!-- Plugin 3.28.0 bundles PMD 7.17, whose bytecode reader cannot open
+					     class files newer than Java 25 (a JDK 26 on the dev box breaks it).
+					     Overriding the four PMD modules together is the documented upgrade path. -->
+					<dependency>
+						<groupId>net.sourceforge.pmd</groupId>
+						<artifactId>pmd-core</artifactId>
+						<version>${pmd.version}</version>
+					</dependency>
+					<dependency>
+						<groupId>net.sourceforge.pmd</groupId>
+						<artifactId>pmd-java</artifactId>
+						<version>${pmd.version}</version>
+					</dependency>
+					<dependency>
+						<groupId>net.sourceforge.pmd</groupId>
+						<artifactId>pmd-javascript</artifactId>
+						<version>${pmd.version}</version>
+					</dependency>
+					<dependency>
+						<groupId>net.sourceforge.pmd</groupId>
+						<artifactId>pmd-jsp</artifactId>
+						<version>${pmd.version}</version>
+					</dependency>
+				</dependencies>
+				<configuration>
+					<rulesets>
+						<ruleset>../config/pmd/ruleset.xml</ruleset>
+					</rulesets>
+					<!-- Explicit: the default derives from maven.compiler.source, which
+					     the Boot parent does not set (it uses maven.compiler.release). -->
+					<targetJdk>25</targetJdk>
+					<includeTests>false</includeTests>
+					<!-- No JXR source report in this build; avoids a "no XRef" warning. -->
+					<linkXRef>false</linkXRef>
+					<!-- A green run needs no HTML site report (and skips its site warnings). -->
+					<skipEmptyReport>true</skipEmptyReport>
+					<printFailingErrors>true</printFailingErrors>
+					<failOnViolation>true</failOnViolation>
+				</configuration>
+				<executions>
+					<execution>
+						<id>pmd-check</id>
+						<phase>verify</phase>
+						<goals>
+							<goal>check</goal>
+						</goals>
+					</execution>
+				</executions>
+			</plugin>
+
+			<!-- JaCoCo: instruction coverage across unit + integration tests (all run
+			     under Surefire today, so one agent covers both). The check fails
+			     verify below 90%; Spring boilerplate is excluded from the metric. -->
+			<plugin>
+				<groupId>org.jacoco</groupId>
+				<artifactId>jacoco-maven-plugin</artifactId>
+				<version>${jacoco.version}</version>
+				<configuration>
+					<excludes>
+						<exclude>**/CatalogServiceApplication.class</exclude>
+						<exclude>**/config/**</exclude>
+					</excludes>
+				</configuration>
+				<executions>
+					<!-- Sets argLine so Surefire starts the JVM with the JaCoCo agent. -->
+					<execution>
+						<id>prepare-agent</id>
+						<goals>
+							<goal>prepare-agent</goal>
+						</goals>
+					</execution>
+					<!-- HTML report at target/site/jacoco/index.html for local inspection. -->
+					<execution>
+						<id>report</id>
+						<phase>verify</phase>
+						<goals>
+							<goal>report</goal>
+						</goals>
+					</execution>
+					<execution>
+						<id>check</id>
+						<phase>verify</phase>
+						<goals>
+							<goal>check</goal>
+						</goals>
+						<configuration>
+							<rules>
+								<rule>
+									<element>BUNDLE</element>
+									<limits>
+										<limit>
+											<counter>INSTRUCTION</counter>
+											<value>COVEREDRATIO</value>
+											<minimum>0.90</minimum>
+										</limit>
+									</limits>
+								</rule>
+							</rules>
+						</configuration>
+					</execution>
+				</executions>
 			</plugin>
 		</plugins>
 	</build>

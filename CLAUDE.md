@@ -32,6 +32,12 @@ Spring Kafka 4, Spring Security 7 + Keycloak, Spring Cloud 2025.1.2+, Testcontai
 - UUID ids, Instant timestamps, a `Money` record for amounts.
 - Flyway `V<n>__description.sql`; never edit an applied migration.
 - Errors as ProblemDetail via @RestControllerAdvice. Use @MockitoBean, not @MockBean.
+- Tests: `given_<state>_when_<action>_then_<outcome>` names, bodies split into
+  `// given`, `// when`, `// then` sections.
+- Branches: `feat/F-XX-<plan-slug>` (or `fix/`, `chore/`); never commit on `main`.
+- Commits: Conventional Commits, `<type>(<service>): <imperative summary>`.
+- Quality gates (`./mvnw verify`): Checkstyle + PMD (rules in `config/`), JaCoCo
+  instruction coverage ≥ 90%. No inline suppressions; fix the code or the shared rule.
 
 ## Commands
 - Infra: `docker compose -f infra/docker-compose.yml up -d`
@@ -45,5 +51,7 @@ Package layout per service: REQUIREMENTS.md §5.2.
 
 ## Definition of done
 Zero warnings, migration if schema changed, tests green, OpenAPI updated,
-`http/` collection updated, plan `status: implemented`,
-learning note in `docs/learning-notes/F-XX.md`.
+`http/` collection updated, quality gates pass (`./mvnw verify`: Checkstyle,
+PMD, coverage ≥ 90%), plan `status: implemented`,
+learning note in `docs/learning-notes/F-XX.md`,
+work merged via PR from a `feat/F-XX-*` branch with green CI.

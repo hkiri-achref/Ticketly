@@ -1,0 +1,34 @@
+<?xml version="1.0"?>
+<ruleset name="Ticketly"
+         xmlns="http://pmd.sourceforge.net/ruleset/2.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://pmd.sourceforge.net/ruleset/2.0.0 https://pmd.sourceforge.io/ruleset_2_0_0.xsd">
+
+  <description>
+    Ticketly clean-code rules: PMD's best-practices, design and error-prone categories,
+    minus rules that fight the project's conventions (records, constructor injection,
+    comment-rich code) or that produce noise without catching real defects.
+  </description>
+
+  <!-- Only main sources are scanned (includeTests=false in the pom), so the
+       UnitTest* assertion rules of this category never fire; nothing to exclude. -->
+  <rule ref="category/java/bestpractices.xml"/>
+
+  <rule ref="category/java/design.xml">
+    <!-- Fluent builders and stream pipelines violate it on every line. -->
+    <exclude name="LawOfDemeter"/>
+    <!-- JPA entities are getters + identity by design (§6.1); the metric
+         flags every one of them, so it carries no signal here. -->
+    <exclude name="DataClass"/>
+    <!-- Needs an explicit package list to mean anything; PMD warns otherwise. -->
+    <exclude name="LoosePackageCoupling"/>
+  </rule>
+
+  <rule ref="category/java/errorprone.xml"/>
+
+  <!-- Categories deliberately NOT referenced: codestyle (AtLeastOneConstructor,
+       OnlyOneReturn, MethodArgumentCouldBeFinal, LocalVariableCouldBeFinal,
+       ShortClassName) and documentation (CommentRequired) — they conflict with
+       the project's conventions. -->
+
+</ruleset>
