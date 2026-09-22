@@ -11,6 +11,9 @@ import com.ticketly.catalog.domain.common.Money;
 import com.ticketly.catalog.domain.event.CapacityExceededException;
 import com.ticketly.catalog.domain.event.Event;
 import com.ticketly.catalog.domain.event.EventStatus;
+import com.ticketly.catalog.domain.event.RejectionReason;
+import com.ticketly.catalog.domain.event.TransitionResult.Ok;
+import com.ticketly.catalog.domain.event.TransitionResult.Rejected;
 import com.ticketly.catalog.domain.venue.Address;
 import com.ticketly.catalog.domain.venue.Venue;
 import com.ticketly.catalog.persistence.event.EventRepository;
@@ -153,6 +156,93 @@ class EventServiceTest {
 
 		// when
 		var thrown = assertThatThrownBy(() -> service.getById(id));
+
+		// then
+		thrown.isInstanceOf(EntityNotFoundException.class).hasMessageContaining(id.toString());
+	}
+
+	@Test
+	void given_publishableEvent_when_publish_then_returnsOkWithSameInstanceAndNoSave() {
+		// given
+		var event = new Event("dev-organizer", "Concert", null, STARTS_AT, ENDS_AT, smallHall());
+		event.addTier("Standard", PRICE, 60, 8);
+		given(events.findWithTiersById(event.getId())).willReturn(Optional.of(event));
+
+		// when
+		var result = service.publish(event.getId());
+
+		// then: the service passes the domain's answer through; dirty checking does the UPDATE
+		assertThat(result).isEqualTo(new Ok(event));
+		assertThat(event.getStatus()).isEqualTo(EventStatus.PUBLISHED);
+		then(events).should(never()).save(any());
+	}
+
+	@Test
+	void given_eventWithoutTiers_when_publish_then_returnsRejectedUnchanged() {
+		// given
+		var event = new Event("dev-organizer", "Concert", null, STARTS_AT, ENDS_AT, smallHall());
+		given(events.findWithTiersById(event.getId())).willReturn(Optional.of(event));
+
+		// when
+		var result = service.publish(event.getId());
+
+		// then
+		assertThat(result).isEqualTo(new Rejected(RejectionReason.NO_TIERS, EventStatus.DRAFT));
+		assertThat(event.getStatus()).isEqualTo(EventStatus.DRAFT);
+	}
+
+	@Test
+	void given_unknownId_when_publish_then_throwsEntityNotFound() {
+		// given
+		var id = UUID.randomUUID();
+		given(events.findWithTiersById(id)).willReturn(Optional.empty());
+
+		// when
+		var thrown = assertThatThrownBy(() -> service.publish(id));
+
+		// then
+		thrown.isInstanceOf(EntityNotFoundException.class).hasMessageContaining(id.toString());
+	}
+
+	@Test
+	void given_draftEvent_when_cancel_then_returnsOkWithReasonApplied() {
+		// given
+		var event = new Event("dev-organizer", "Concert", null, STARTS_AT, ENDS_AT, smallHall());
+		given(events.findWithTiersById(event.getId())).willReturn(Optional.of(event));
+
+		// when
+		var result = service.cancel(event.getId(), new CancelEventCommand("Venue flooded"));
+
+		// then
+		assertThat(result).isEqualTo(new Ok(event));
+		assertThat(event.getStatus()).isEqualTo(EventStatus.CANCELLED);
+		assertThat(event.getCancellationReason()).isEqualTo("Venue flooded");
+		then(events).should(never()).save(any());
+	}
+
+	@Test
+	void given_cancelledEvent_when_cancel_then_returnsRejectedAlreadyCancelled() {
+		// given
+		var event = new Event("dev-organizer", "Concert", null, STARTS_AT, ENDS_AT, smallHall());
+		event.cancel("First reason");
+		given(events.findWithTiersById(event.getId())).willReturn(Optional.of(event));
+
+		// when
+		var result = service.cancel(event.getId(), new CancelEventCommand("Second reason"));
+
+		// then
+		assertThat(result).isEqualTo(new Rejected(RejectionReason.ALREADY_CANCELLED, EventStatus.CANCELLED));
+		assertThat(event.getCancellationReason()).isEqualTo("First reason");
+	}
+
+	@Test
+	void given_unknownId_when_cancel_then_throwsEntityNotFound() {
+		// given
+		var id = UUID.randomUUID();
+		given(events.findWithTiersById(id)).willReturn(Optional.empty());
+
+		// when
+		var thrown = assertThatThrownBy(() -> service.cancel(id, new CancelEventCommand("Whatever")));
 
 		// then
 		thrown.isInstanceOf(EntityNotFoundException.class).hasMessageContaining(id.toString());

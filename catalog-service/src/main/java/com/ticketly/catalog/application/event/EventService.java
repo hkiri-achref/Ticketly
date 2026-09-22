@@ -1,6 +1,7 @@
 package com.ticketly.catalog.application.event;
 
 import com.ticketly.catalog.domain.event.Event;
+import com.ticketly.catalog.domain.event.TransitionResult;
 import com.ticketly.catalog.domain.venue.Venue;
 import com.ticketly.catalog.persistence.event.EventRepository;
 import com.ticketly.catalog.persistence.venue.VenueRepository;
@@ -35,8 +36,8 @@ public class EventService {
 		return events.save(event);
 	}
 
-	// TODO: F-04 — reject updates once the event has left DRAFT (nothing can
-	// leave DRAFT before F-04 exists, so the guard would be dead code today).
+	// Edits on a CANCELLED event are refused by the aggregate itself
+	// (EventNotEditableException → 422); the service does not repeat the check.
 	@Transactional
 	public Event update(UUID id, UpdateEventCommand command) {
 		var event = loadWithTiers(id);
@@ -49,6 +50,26 @@ public class EventService {
 		var event = loadWithTiers(id);
 		event.addTier(command.name(), command.price(), command.quantity(), command.maxPerBooking());
 		return event;
+	}
+
+	// The service passes the domain's answer through untouched. On Rejected
+	// nothing was mutated, so commit issues no UPDATE; on Ok the version
+	// column is checked at flush — a concurrent writer surfaces here as
+	// ObjectOptimisticLockingFailureException, thrown out of the transaction
+	// commit (not from the domain), which the API maps to 409.
+	@Transactional
+	public TransitionResult publish(UUID id) {
+		var event = loadWithTiers(id);
+		var result = event.publish();
+		// TODO: F-15 — on Ok, write an EventPublished record to the outbox in
+		// this same transaction.
+		return result;
+	}
+
+	@Transactional
+	public TransitionResult cancel(UUID id, CancelEventCommand command) {
+		var event = loadWithTiers(id);
+		return event.cancel(command.reason());
 	}
 
 	public Event getById(UUID id) {
