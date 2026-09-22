@@ -14,6 +14,7 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.OneToMany;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -73,6 +74,21 @@ public class Event {
 	@Column(name = "updated_at", nullable = false)
 	private Instant updatedAt;
 
+	@Column(name = "cancellation_reason", length = 500)
+	private String cancellationReason;
+
+	@Column(name = "cancelled_at")
+	private Instant cancelledAt;
+
+	// Optimistic locking. Hibernate appends `and version = ?` to every UPDATE
+	// of this row and increments the value; if another transaction committed
+	// in between, zero rows match and Hibernate throws instead of overwriting
+	// the other writer's change silently (the "lost update" problem). No DB
+	// lock is held, which is why it scales for rare conflicts. Never set it
+	// from application code.
+	@Version
+	private long version;
+
 	protected Event() {
 	}
 
@@ -95,6 +111,7 @@ public class Event {
 	// capacity is read from the referenced venue, never passed in — a caller
 	// that could pass a number could also pass a wrong one.
 	public TicketTier addTier(String name, Money price, int quantity, int maxPerBooking) {
+		requireEditable();
 		int allocated = tiers.stream().mapToInt(TicketTier::getQuantity).sum();
 		int capacity = venue.getCapacity();
 		if (allocated + quantity > capacity) {
@@ -117,12 +134,61 @@ public class Event {
 	}
 
 	public void update(String title, String description, Instant startsAt, Instant endsAt) {
+		requireEditable();
 		requireValidPeriod(startsAt, endsAt);
 		this.title = Objects.requireNonNull(title, "title must not be null");
 		this.description = description;
 		this.startsAt = startsAt;
 		this.endsAt = endsAt;
 		touch();
+	}
+
+	// The state machine lives here, next to the state it guards. The method
+	// RETURNS the outcome instead of throwing: "not publishable yet" is an
+	// expected answer, and the caller has a distinct action for each reason.
+	// Nothing is mutated on the Rejected path, so the transaction commits
+	// without an UPDATE.
+	public TransitionResult publish() {
+		if (status == EventStatus.CANCELLED) {
+			return new TransitionResult.Rejected(RejectionReason.ALREADY_CANCELLED, status);
+		}
+		if (status == EventStatus.PUBLISHED) {
+			return new TransitionResult.Rejected(RejectionReason.ALREADY_PUBLISHED, status);
+		}
+		if (tiers.isEmpty()) {
+			return new TransitionResult.Rejected(RejectionReason.NO_TIERS, status);
+		}
+		if (!startsAt.isAfter(Instant.now())) {
+			return new TransitionResult.Rejected(RejectionReason.STARTS_IN_PAST, status);
+		}
+		this.status = EventStatus.PUBLISHED;
+		touch();
+		// TODO: F-15 — emit EventPublished (outbox) so booking-service can
+		// build its inventory replica.
+		return new TransitionResult.Ok(this);
+	}
+
+	// Allowed from DRAFT and PUBLISHED; CANCELLED is terminal, so a second
+	// cancel is refused rather than silently replacing the first reason.
+	public TransitionResult cancel(String reason) {
+		Objects.requireNonNull(reason, "reason must not be null");
+		if (status == EventStatus.CANCELLED) {
+			return new TransitionResult.Rejected(RejectionReason.ALREADY_CANCELLED, status);
+		}
+		this.status = EventStatus.CANCELLED;
+		this.cancellationReason = reason;
+		this.cancelledAt = Instant.now();
+		touch();
+		return new TransitionResult.Ok(this);
+	}
+
+	// Edits are refused only once the event is CANCELLED (terminal). A
+	// PUBLISHED event stays editable: fixing a description or adding a tier
+	// to a live event is normal business.
+	private void requireEditable() {
+		if (status == EventStatus.CANCELLED) {
+			throw new EventNotEditableException(status);
+		}
 	}
 
 	// private static: called from the constructor, and calling an overridable
@@ -185,6 +251,18 @@ public class Event {
 
 	public Instant getUpdatedAt() {
 		return updatedAt;
+	}
+
+	public String getCancellationReason() {
+		return cancellationReason;
+	}
+
+	public Instant getCancelledAt() {
+		return cancelledAt;
+	}
+
+	public long getVersion() {
+		return version;
 	}
 
 	@Override

@@ -5,6 +5,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.ticketly.catalog.domain.common.DomainRuleViolationException;
 import com.ticketly.catalog.domain.common.Money;
+import com.ticketly.catalog.domain.event.TransitionResult.Ok;
+import com.ticketly.catalog.domain.event.TransitionResult.Rejected;
 import com.ticketly.catalog.domain.venue.Address;
 import com.ticketly.catalog.domain.venue.Venue;
 import jakarta.persistence.EntityNotFoundException;
@@ -26,6 +28,24 @@ class EventTest {
 	private static Event draftEvent() {
 		var venue = new Venue("Small Hall", new Address("1 Main St", "Paris", "France"), CAPACITY);
 		return new Event("dev-organizer", "Concert", "A night of music", STARTS_AT, ENDS_AT, venue);
+	}
+
+	private static Event publishableEvent() {
+		var event = draftEvent();
+		event.addTier("Standard", PRICE, 60, 8);
+		return event;
+	}
+
+	private static Event publishedEvent() {
+		var event = publishableEvent();
+		event.publish();
+		return event;
+	}
+
+	private static Event cancelledEvent() {
+		var event = draftEvent();
+		event.cancel("Venue flooded");
+		return event;
 	}
 
 	@Test
@@ -172,6 +192,191 @@ class EventTest {
 		assertThat(sameAsItself).isTrue();
 		assertThat(sameAsOther).isFalse();
 		assertThat(event.hashCode()).isEqualTo(event.getId().hashCode());
+	}
+
+	// ---- state machine: publish -------------------------------------------
+
+	@Test
+	void given_draftWithTierInFuture_when_publish_then_okAndPublished() {
+		// given
+		var event = publishableEvent();
+		var before = event.getUpdatedAt();
+
+		// when
+		var result = event.publish();
+
+		// then: record pattern in the assertion — Ok carries the event itself
+		assertThat(result).isInstanceOf(Ok.class);
+		assertThat(((Ok) result).event()).isSameAs(event);
+		assertThat(event.getStatus()).isEqualTo(EventStatus.PUBLISHED);
+		assertThat(event.getUpdatedAt()).isAfterOrEqualTo(before);
+	}
+
+	@Test
+	void given_draftWithoutTiers_when_publish_then_rejectedNoTiersAndStillDraft() {
+		// given
+		var event = draftEvent();
+
+		// when
+		var result = event.publish();
+
+		// then
+		assertThat(result).isEqualTo(new Rejected(RejectionReason.NO_TIERS, EventStatus.DRAFT));
+		assertThat(event.getStatus()).isEqualTo(EventStatus.DRAFT);
+	}
+
+	@Test
+	void given_draftStartingInPast_when_publish_then_rejectedStartsInPast() {
+		// given
+		var venue = new Venue("Small Hall", new Address("1 Main St", "Paris", "France"), CAPACITY);
+		var past = Instant.now().minus(Duration.ofDays(1));
+		var event = new Event("dev-organizer", "Concert", null, past, past.plus(Duration.ofHours(2)), venue);
+		event.addTier("Standard", PRICE, 60, 8);
+
+		// when
+		var result = event.publish();
+
+		// then
+		assertThat(result).isEqualTo(new Rejected(RejectionReason.STARTS_IN_PAST, EventStatus.DRAFT));
+		assertThat(event.getStatus()).isEqualTo(EventStatus.DRAFT);
+	}
+
+	@Test
+	void given_publishedEvent_when_publish_then_rejectedAlreadyPublished() {
+		// given
+		var event = publishedEvent();
+
+		// when
+		var result = event.publish();
+
+		// then
+		assertThat(result).isEqualTo(new Rejected(RejectionReason.ALREADY_PUBLISHED, EventStatus.PUBLISHED));
+	}
+
+	@Test
+	void given_cancelledEvent_when_publish_then_rejectedAlreadyCancelled() {
+		// given
+		var event = cancelledEvent();
+
+		// when
+		var result = event.publish();
+
+		// then
+		assertThat(result).isEqualTo(new Rejected(RejectionReason.ALREADY_CANCELLED, EventStatus.CANCELLED));
+		assertThat(event.getStatus()).isEqualTo(EventStatus.CANCELLED);
+	}
+
+	// ---- state machine: cancel --------------------------------------------
+
+	@Test
+	void given_draftEvent_when_cancel_then_okWithReasonAndTimestamp() {
+		// given
+		var event = draftEvent();
+
+		// when
+		var result = event.cancel("Venue flooded");
+
+		// then
+		assertThat(result).isInstanceOf(Ok.class);
+		assertThat(event.getStatus()).isEqualTo(EventStatus.CANCELLED);
+		assertThat(event.getCancellationReason()).isEqualTo("Venue flooded");
+		assertThat(event.getCancelledAt()).isNotNull();
+	}
+
+	@Test
+	void given_publishedEvent_when_cancel_then_okAndCancelled() {
+		// given
+		var event = publishedEvent();
+
+		// when
+		var result = event.cancel("Artist ill");
+
+		// then
+		assertThat(result).isInstanceOf(Ok.class);
+		assertThat(event.getStatus()).isEqualTo(EventStatus.CANCELLED);
+	}
+
+	@Test
+	void given_cancelledEvent_when_cancelAgain_then_rejectedAndFirstReasonKept() {
+		// given
+		var event = cancelledEvent();
+		var firstCancelledAt = event.getCancelledAt();
+
+		// when
+		var result = event.cancel("Second thoughts");
+
+		// then: terminal state — the first reason is never overwritten
+		assertThat(result).isEqualTo(new Rejected(RejectionReason.ALREADY_CANCELLED, EventStatus.CANCELLED));
+		assertThat(event.getCancellationReason()).isEqualTo("Venue flooded");
+		assertThat(event.getCancelledAt()).isEqualTo(firstCancelledAt);
+	}
+
+	@Test
+	void given_nullReason_when_cancel_then_throwsNullPointerAndStaysDraft() {
+		// given
+		var event = draftEvent();
+
+		// when
+		var thrown = assertThatThrownBy(() -> event.cancel(null));
+
+		// then
+		thrown.isInstanceOf(NullPointerException.class);
+		assertThat(event.getStatus()).isEqualTo(EventStatus.DRAFT);
+	}
+
+	// ---- editing guard ----------------------------------------------------
+
+	@Test
+	void given_cancelledEvent_when_update_then_throwsNotEditable() {
+		// given
+		var event = cancelledEvent();
+
+		// when
+		var thrown = assertThatThrownBy(() -> event.update("New title", null, STARTS_AT, ENDS_AT));
+
+		// then
+		thrown.isInstanceOf(EventNotEditableException.class)
+				.isInstanceOf(DomainRuleViolationException.class)
+				.hasMessageContaining("CANCELLED");
+		assertThat(event.getTitle()).isEqualTo("Concert");
+	}
+
+	@Test
+	void given_cancelledEvent_when_addTier_then_throwsNotEditable() {
+		// given
+		var event = cancelledEvent();
+
+		// when
+		var thrown = assertThatThrownBy(() -> event.addTier("Standard", PRICE, 10, 8));
+
+		// then
+		thrown.isInstanceOf(EventNotEditableException.class);
+		assertThat(event.getTiers()).isEmpty();
+	}
+
+	@Test
+	void given_publishedEvent_when_updateAndAddTier_then_bothAllowed() {
+		// given
+		var event = publishedEvent();
+
+		// when
+		event.update("Concert (extended)", null, STARTS_AT, ENDS_AT);
+		event.addTier("Balcony", PRICE, 20, 8);
+
+		// then
+		assertThat(event.getTitle()).isEqualTo("Concert (extended)");
+		assertThat(event.getTiers()).hasSize(2);
+	}
+
+	@Test
+	void given_newEvent_when_read_then_versionIsZeroAndNoCancellationData() {
+		// given / when
+		var event = draftEvent();
+
+		// then
+		assertThat(event.getVersion()).isZero();
+		assertThat(event.getCancellationReason()).isNull();
+		assertThat(event.getCancelledAt()).isNull();
 	}
 
 }
