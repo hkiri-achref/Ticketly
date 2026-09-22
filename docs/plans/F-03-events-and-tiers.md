@@ -30,18 +30,18 @@ a placeholder organizer until F-04 / F-07.
 ## Design
 | Component (file/class) | Responsibility | Concept practiced |
 |---|---|---|
-| `domain/Money` | `@Embeddable record Money(BigDecimal amount, String currency)`; compact ctor rejects null, negative, scale > 2, currency not `[A-Z]{3}`; `of(BigDecimal,String)`, `plus(Money)` (same currency else IAE), `times(int)` | record embeddable; Hibernate uses the canonical ctor so validation also runs on load |
-| `domain/EventStatus` | enum DRAFT, PUBLISHED, CANCELLED (only DRAFT reachable now) | `@Enumerated(STRING)` |
-| `domain/Event` | aggregate root: public ctor (organizerId, title, description, startsAt, endsAt, venue) validates endsAt > startsAt; `addTier(name, price, quantity, maxPerBooking)` checks sum of quantities ≤ `venue.getCapacity()` else `CapacityExceededException`; `removeTier(UUID)`; `update(title, description, startsAt, endsAt)` bumps `updatedAt`; `tiers` = `List<TicketTier>` `@OneToMany(mappedBy="event", cascade=ALL, orphanRemoval=true)` exposed unmodifiable; `venue` `@ManyToOne(fetch=LAZY)`; ID-only equals/hashCode | invariants inside the entity, cascade/orphanRemoval, LAZY |
-| `domain/TicketTier` | child: package-private ctor (only `Event.addTier` creates one); `@ManyToOne(fetch=LAZY) event`; `@Embedded Money price` with `@AttributeOverride` → `price_amount`, `price_currency`; quantity; maxPerBooking; ID-only equals/hashCode | child entity reachable only via the root |
-| `domain/DomainRuleViolationException` (+ `CapacityExceededException`, `InvalidEventPeriodException`) | unchecked base for business-rule failures | one handler → 422; F-04 extends it |
-| `persistence/EventRepository` | `JpaRepository<Event, UUID>` + `@EntityGraph(attributePaths = "tiers") Optional<Event> findWithTiersById(UUID)` | `@EntityGraph` vs `join fetch` (join-fetch variant in learning note only). No `TicketTierRepository` |
-| `application/CreateEventCommand`, `UpdateEventCommand`, `AddTierCommand` | records decoupling HTTP shape from use cases | commands (§6.2) |
-| `application/EventService` | `@Service @Transactional(readOnly = true)`; read-write `create` (loads venue, 404 via `EntityNotFoundException`), `update`, `addTier` — both load, call domain method, return; **no `save`**; `getById` via `findWithTiersById` | dirty checking; tx boundary on the service |
-| `api/CreateEventRequest`, `UpdateEventRequest`, `AddTierRequest` (+ nested `MoneyPayload`) | validation on record components, compact ctor `strip()`; `maxPerBooking` optional, default 8 | request records |
-| `api/EventResponse`, `TierResponse`, `MoneyResponse` | static `from(...)` hand-mapping | §6.3 mapping boundary |
-| `api/EventController` | endpoints below; injects `"dev-organizer"` into the command (TODO F-07: JWT subject) | controller only maps HTTP |
-| `api/ApiExceptionHandler` | add `DomainRuleViolationException` → 422 ProblemDetail | RFC-7807 |
+| `domain/common/Money` | `@Embeddable record Money(BigDecimal amount, String currency)`; compact ctor rejects null, negative, scale > 2, currency not `[A-Z]{3}`; `of(BigDecimal,String)`, `plus(Money)` (same currency else IAE), `times(int)` | record embeddable; Hibernate uses the canonical ctor so validation also runs on load |
+| `domain/event/EventStatus` | enum DRAFT, PUBLISHED, CANCELLED (only DRAFT reachable now) | `@Enumerated(STRING)` |
+| `domain/event/Event` | aggregate root: public ctor (organizerId, title, description, startsAt, endsAt, venue) validates endsAt > startsAt; `addTier(name, price, quantity, maxPerBooking)` checks sum of quantities ≤ `venue.getCapacity()` else `CapacityExceededException`; `removeTier(UUID)`; `update(title, description, startsAt, endsAt)` bumps `updatedAt`; `tiers` = `List<TicketTier>` `@OneToMany(mappedBy="event", cascade=ALL, orphanRemoval=true)` exposed unmodifiable; `venue` `@ManyToOne(fetch=LAZY)`; ID-only equals/hashCode | invariants inside the entity, cascade/orphanRemoval, LAZY |
+| `domain/event/TicketTier` | child: package-private ctor (only `Event.addTier` creates one); `@ManyToOne(fetch=LAZY) event`; `@Embedded Money price` with `@AttributeOverride` → `price_amount`, `price_currency`; quantity; maxPerBooking; ID-only equals/hashCode | child entity reachable only via the root |
+| `domain/common/DomainRuleViolationException` (+ `CapacityExceededException`, `InvalidEventPeriodException`) | unchecked base for business-rule failures | one handler → 422; F-04 extends it |
+| `persistence/event/EventRepository` | `JpaRepository<Event, UUID>` + `@EntityGraph(attributePaths = "tiers") Optional<Event> findWithTiersById(UUID)` | `@EntityGraph` vs `join fetch` (join-fetch variant in learning note only). No `TicketTierRepository` |
+| `application/event/CreateEventCommand`, `UpdateEventCommand`, `AddTierCommand` | records decoupling HTTP shape from use cases | commands (§6.2) |
+| `application/event/EventService` | `@Service @Transactional(readOnly = true)`; read-write `create` (loads venue, 404 via `EntityNotFoundException`), `update`, `addTier` — both load, call domain method, return; **no `save`**; `getById` via `findWithTiersById` | dirty checking; tx boundary on the service |
+| `api/event/CreateEventRequest`, `UpdateEventRequest`, `AddTierRequest` (+ nested `MoneyPayload`) | validation on record components, compact ctor `strip()`; `maxPerBooking` optional, default 8 | request records |
+| `api/event/EventResponse`, `TierResponse`, `MoneyResponse` | static `from(...)` hand-mapping | §6.3 mapping boundary |
+| `api/event/EventController` | endpoints below; injects `"dev-organizer"` into the command (TODO F-07: JWT subject) | controller only maps HTTP |
+| `api/common/ApiExceptionHandler` | add `DomainRuleViolationException` → 422 ProblemDetail | RFC-7807 |
 
 ### Data & migration
 `V3__events_tiers.sql`:
@@ -130,3 +130,8 @@ None of substance. Notes recorded for transparency:
   Documented in the learning note; `Persistable` left for later.
 - 422 uses `HttpStatus.UNPROCESSABLE_CONTENT` (Spring 7 name; the older
   `UNPROCESSABLE_ENTITY` is deprecated).
+- Post-implementation restructuring (same branch): every layer is now split
+  into per-aggregate sub-packages (`api/event`, `domain/event`, `domain/common`,
+  ...), `VenueService` takes a `CreateVenueCommand` instead of the request
+  record, and `ArchitectureTest` (ArchUnit) guards both rules. §5.2, CLAUDE.md
+  and both skills were updated accordingly.

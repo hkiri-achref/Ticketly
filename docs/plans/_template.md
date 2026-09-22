@@ -17,7 +17,7 @@ depends_on: []
 - Out (explicitly):
 
 ## Design
-| Component (file/class) | Responsibility | Concept practiced |
+| Component (`<layer>/<aggregate>/<Class>`) | Responsibility | Concept practiced |
 |---|---|---|
 | | | |
 

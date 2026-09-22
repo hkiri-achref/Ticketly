@@ -17,7 +17,11 @@ We are PLANNING feature $ARGUMENTS of Ticketly. No application code is written b
 1. Restate the business goal and acceptance criteria in your own words. Ask me at most 3
    clarifying questions if something is ambiguous; otherwise state your assumptions.
 2. Propose the design as a conversation, not a document yet:
-    - components: class/file → responsibility → which modern Java/Spring concept it practices
+    - components: class/file → responsibility → which modern Java/Spring concept it practices.
+      Name each component with its full package path per REQUIREMENTS.md §5.2, i.e.
+      `<layer>/<aggregate>/<Class>` (e.g. `domain/event/TicketTier`, `api/common/ApiExceptionHandler`);
+      children belong to their aggregate root's sub-package, shared pieces to `<layer>/common/`.
+      A plan that lists a class directly under a layer root is not approvable.
     - data model and migration
     - API or Kafka contracts touched
     - transaction boundaries and concurrency risks
